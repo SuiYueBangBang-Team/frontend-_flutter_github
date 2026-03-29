@@ -1,0 +1,97 @@
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+// 工具类
+import 'package:phone_java/utils/api_client.dart';
+import 'app_fonts.dart';
+
+// 页面类 - 引导与登录
+import 'package:phone_java/page/onboarding/RoleSelectionPage.dart';
+import 'package:phone_java/page/onboarding/QuickLoginPage.dart';
+import 'package:phone_java/page/onboarding/PhoneInputPage.dart';
+import 'package:phone_java/page/onboarding/AvatarSelectionPage.dart';
+
+// 页面类 - 长辈端主页
+import 'index_page.dart';
+
+// 页面类 - 子女端主页
+// 💡 注意：请确保你已经按照之前的建议在 lib/page/child/ 目录下创建了该文件
+import 'package:phone_java/page/child/child_index_page.dart';
+
+// 💡 1. 全局 NavigatorKey
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+// 💡 2. 定义全局初始路由变量
+String initialRoute = '/';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // final prefs = await SharedPreferences.getInstance();
+  // final savedToken = prefs.getString('token');
+  // final savedRole = prefs.getString('role'); // 💡 读取存储的角色
+  //
+  // if (savedToken != null && savedToken.isNotEmpty) {
+  //   ApiClient.globalToken = savedToken;
+  //
+  //   // 💡 核心逻辑：自动登录时，根据角色决定去哪个主页
+  //   if (savedRole == 'CHILD') {
+  //     initialRoute = '/child_index'; // 子女端主页
+  //   } else {
+  //     initialRoute = '/home'; // 长辈端主页
+  //   }
+  // }
+  initialRoute = '/';
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    // 💡 使用 ListenableBuilder 监听 FontManager 实现全局字体缩放
+    return ListenableBuilder(
+      listenable: FontManager(),
+      builder: (context, child) {
+        return MaterialApp(
+          navigatorKey: navigatorKey,
+          title: '岁悦帮帮',
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            primaryColor: Colors.blueAccent,
+            useMaterial3: true,
+            fontFamily: 'PingFang SC',
+          ),
+
+          // 💡 核心拦截器：通过 MediaQuery 实现全局比例缩放
+          builder: (context, widget) {
+            return MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                textScaler: TextScaler.linear(FontManager().scale),
+              ),
+              child: widget!,
+            );
+          },
+
+          // 💡 使用动态确定的初始路由
+          initialRoute: initialRoute,
+
+          routes: {
+            // 公共引导路由
+            '/': (context) => const RoleSelectionPage(),
+            '/login': (context) => const QuickLoginPage(),
+            '/phone_input': (context) => const PhoneInputPage(),
+
+            // 长辈端专属
+            '/avatar': (context) => const AvatarSelectionPage(),
+            '/home': (context) => const IndexPage(),
+
+            // 子女端专属
+            '/child_index': (context) => const ChildIndexPage(),
+          },
+        );
+      },
+    );
+  }
+}
