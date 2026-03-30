@@ -44,6 +44,14 @@ class VoiceIntentHandler {
   }
 
   static Future<void> _openWeChat(Map<String, dynamic> params) async {
+    // 检查是否有联系人参数：有的话走无障碍自动化拨打，没的话只打开微信
+    final contact = (params['contact'] ?? params['contactName'] ?? params['keyword'] ?? '').toString().trim();
+    if (contact.isNotEmpty) {
+      print("📞 WECHAT action 带联系人参数: $contact，触发微信语音自动拨打");
+      await _startWeChatVoiceCall({'contact': contact});
+      return;
+    }
+    print("📱 WECHAT action 无联系人参数，仅打开微信");
     await _launchAnyApp(['weixin://']);
   }
 
@@ -69,9 +77,47 @@ class VoiceIntentHandler {
   static Future<void> _openAppByName(Map<String, dynamic> params) async {
     final appName = (params['appName'] ?? params['name'] ?? '').toString().trim();
     if (appName.isEmpty) return;
+
+    print("🔍 _openAppByName 被调用，appName = $appName");
+
     try {
-      await _channel.invokeMethod('openAppByName', {'appName': appName});
-    } catch (_) {}
+      final result = await _channel.invokeMethod<bool>('openAppByName', {'appName': appName});
+      print("📱 原生 openAppByName 返回: $result");
+      if (result == true) return;
+    } catch (e) {
+      print("❌ 原生 openAppByName 异常: $e");
+    }
+
+    // 兜底：用 Deep Link / url_launcher 尝试
+    final deepLinkMap = {
+      '美团': ['imeituan://www.meituan.com/', 'market://details?id=com.sankuai.meituan'],
+      '微信': ['weixin://'],
+      '支付宝': ['alipay://'],
+      '抖音': ['snssdk1128://'],
+      '拼多多': ['pinduoduo://'],
+      '淘宝': ['taobao://'],
+      '京东': ['openapp.jdmoble://'],
+      '快手': ['kwai://'],
+      '小红书': ['snsdk://'],
+    };
+
+    for (final entry in deepLinkMap.entries) {
+      if (appName.contains(entry.key)) {
+        for (final url in entry.value) {
+          print("🔄 兜底尝试 Deep Link: $url");
+          final launched = await _launchAnyApp([url]);
+          if (launched) return;
+        }
+      }
+    }
+
+    // 最终兜底：尝试通过市场 URL 打开
+    final encoded = Uri.encodeComponent(appName);
+    print("🔄 最终兜底尝试搜索应用: $appName");
+    await _launchAnyApp([
+      'https://play.google.com/store/search?q=$encoded',
+      'market://search?q=$encoded',
+    ]);
   }
 
   // 💡 6. 实现通用应用内搜索 (如：在美团里搜索...)
