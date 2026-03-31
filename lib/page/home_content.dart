@@ -41,6 +41,8 @@ class _HomeContentState extends State<HomeContent> with SingleTickerProviderStat
   void initState() {
     super.initState();
     _waveController = AnimationController(vsync: this, duration: const Duration(seconds: 2));
+    // App 启动后自动显示悬浮窗
+    VoiceIntentHandler.showFloatWindow();
   }
 
   void _scrollToBottom() {
@@ -136,6 +138,7 @@ class _HomeContentState extends State<HomeContent> with SingleTickerProviderStat
 
       // 💡 传入 audioUrl
       _startAiStreamResponse(voiceFeedback.toString().isNotEmpty ? voiceFeedback.toString() : "已收到语音指令", audioUrl: audioUrl);
+      debugPrint("🎯 home_content 收到 action = $action, params = $params");
       await VoiceIntentHandler.handle(action: action, params: params);
     } catch (e) {
       _startAiStreamResponse("语音识别失败，请稍后再试。($e)");
@@ -158,10 +161,15 @@ class _HomeContentState extends State<HomeContent> with SingleTickerProviderStat
       });
 
       String reply = response['reply'] ?? "帮帮听不懂，能再说一遍吗？";
-      String audioUrl = response['audioUrl'] ?? ""; // 💡 提取后端返回的音频链接
+      String audioUrl = response['audioUrl'] ?? "";
+      String action = response['action']?.toString() ?? '';
+      Map<String, dynamic> params = response['params'] is Map ? Map<String, dynamic>.from(response['params']) : <String, dynamic>{};
 
-      // 💡 传入 audioUrl 触发播放
+      debugPrint("🎯 _sendToAi 收到 action = $action, params = $params");
+
+      // 传入 audioUrl 触发播放
       _startAiStreamResponse(reply, audioUrl: audioUrl);
+      await VoiceIntentHandler.handle(action: action, params: params);
     } catch (e) {
       _startAiStreamResponse("网络好像出错了，请稍后再试。($e)");
     }

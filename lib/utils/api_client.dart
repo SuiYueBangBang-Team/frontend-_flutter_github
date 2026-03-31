@@ -15,8 +15,8 @@ class ApiClient {
 
   ApiClient._internal() {
     BaseOptions options = BaseOptions(
-      baseUrl: "http://10.0.2.2:9000", // 模拟测试(模拟机)
-      // baseUrl: "10.96.97.231:9000",   // 无线测试(真机)
+      // baseUrl: "http://10.0.2.2:9000", // 模拟测试(模拟机)
+      baseUrl: "http://127.0.0.1:9000",   // 无线测试(真机)
 
       connectTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 60),
@@ -34,7 +34,7 @@ class ApiClient {
 
         print("➡️ 发起请求: ${options.method} ${options.path}");
         print("📦 请求参数: ${options.data ?? options.queryParameters}");
-        print("🎫 请求头: ${options.headers}"); // 打印一下头信息方便调试
+        print("🎫 请求头: ${options.headers}");
         return handler.next(options);
       },
       onResponse: (response, handler) {
