@@ -29,7 +29,8 @@ class _HomeContentState extends State<HomeContent> with SingleTickerProviderStat
 
   // 💡 注意：这里必须和你的 ApiClient 中的 baseUrl 保持一致！
   // 如果你在 ApiClient 中用的是 10.0.2.2，这里也要换成 10.0.2.2
-  final String _baseUrl = "http://10.0.2.2:9000";
+  // final String _baseUrl = "http://10.0.2.2:9000";
+  final String _baseUrl = "http://127.0.0.1:9000";
 
   final List<Map<String, String>> _messages = [
     {"role": "ai", "content": "您好！我是帮帮，有什么可以帮您？"},

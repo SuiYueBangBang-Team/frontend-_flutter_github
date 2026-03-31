@@ -18,6 +18,9 @@ import 'index_page.dart';
 // 💡 注意：请确保你已经按照之前的建议在 lib/page/child/ 目录下创建了该文件
 import 'package:phone_java/page/child/child_index_page.dart';
 
+import 'package:phone_java/page/child/child_create_post_page.dart';
+import 'package:phone_java/page/child/child_my_post_page.dart';
+
 // 💡 1. 全局 NavigatorKey
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -27,21 +30,27 @@ String initialRoute = '/';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // final prefs = await SharedPreferences.getInstance();
-  // final savedToken = prefs.getString('token');
-  // final savedRole = prefs.getString('role'); // 💡 读取存储的角色
-  //
-  // if (savedToken != null && savedToken.isNotEmpty) {
-  //   ApiClient.globalToken = savedToken;
-  //
-  //   // 💡 核心逻辑：自动登录时，根据角色决定去哪个主页
-  //   if (savedRole == 'CHILD') {
-  //     initialRoute = '/child_index'; // 子女端主页
-  //   } else {
-  //     initialRoute = '/home'; // 长辈端主页
-  //   }
-  // }
-  initialRoute = '/';
+  // 1. 读取本地缓存
+  final prefs = await SharedPreferences.getInstance();
+  final savedToken = prefs.getString('token');
+  final savedRole = prefs.getString('role');
+
+  // 2. 判断是否存在有效的 Token
+  if (savedToken != null && savedToken.isNotEmpty) {
+    // 将读取到的 token 赋值给 ApiClient，这样后续的网络请求都会自动带上头信息
+    ApiClient.globalToken = savedToken;
+
+    // 💡 核心逻辑：自动登录时，根据角色决定去哪个主页
+    if (savedRole == 'CHILD') {
+      initialRoute = '/child_index'; // 跳转到子女端主页
+    } else {
+      initialRoute = '/home';        // 跳转到长辈端主页
+    }
+  } else {
+    // 如果没有 Token，才进入初始的角色选择/登录页面
+    initialRoute = '/';
+  }
+
   runApp(const MyApp());
 }
 
@@ -89,6 +98,10 @@ class MyApp extends StatelessWidget {
 
             // 子女端专属
             '/child_index': (context) => const ChildIndexPage(),
+
+            // 💡 新增：社区相关路由
+            '/createPostPage': (context) => const CreatePostPage(),
+            '/myPostPage': (context) => const MyPostPage(),
           },
         );
       },
