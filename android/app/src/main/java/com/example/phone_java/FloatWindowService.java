@@ -8,11 +8,13 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.PixelFormat;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.provider.Settings;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
@@ -67,6 +69,18 @@ public class FloatWindowService extends Service {
     public void onCreate() {
         super.onCreate();
         Log.d(TAG, "=== onCreate 悬浮窗服务启动 ===");
+
+        // 检查悬浮窗权限（Android 6.0+ 必须用户授权）
+        if (!Settings.canDrawOverlays(this)) {
+            Log.w(TAG, "=== 缺少 SYSTEM_ALERT_WINDOW 权限，尝试请求 ===");
+            Intent overlayIntent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION);
+            overlayIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(overlayIntent);
+            stopForeground(STOP_FOREGROUND_REMOVE);
+            stopSelf();
+            return;
+        }
+
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         createNotificationChannel();
         startForeground(1, buildNotification());
@@ -168,8 +182,15 @@ public class FloatWindowService extends Service {
             }
         });
 
-        windowManager.addView(floatView, params);
-        Log.d(TAG, "=== onCreate 完成，悬浮窗已显示 ===");
+        try {
+            windowManager.addView(floatView, params);
+            Log.d(TAG, "=== onCreate 完成，悬浮窗已显示 ===");
+        } catch (Exception e) {
+            Log.e(TAG, "=== 悬浮窗添加失败: " + e.getClass().getSimpleName() + ": " + e.getMessage() + " ===");
+            Log.e(TAG, "如果使用模拟器，请确保已授予 SYSTEM_ALERT_WINDOW 权限（需在设置中手动开启）");
+            stopForeground(STOP_FOREGROUND_REMOVE);
+            stopSelf();
+        }
     }
 
     private String actionToString(int action) {
