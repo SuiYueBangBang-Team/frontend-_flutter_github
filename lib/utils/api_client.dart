@@ -32,17 +32,17 @@ class ApiClient {
           options.headers["Authorization"] = globalToken;
         }
 
-        print("➡️ 发起请求: ${options.method} ${options.path}");
-        print("📦 请求参数: ${options.data ?? options.queryParameters}");
-        print("🎫 请求头: ${options.headers}");
+        // print("➡️ 发起请求: ${options.method} ${options.path}");
+        // print("📦 请求参数: ${options.data ?? options.queryParameters}");
+        // print("🎫 请求头: ${options.headers}");
         return handler.next(options);
       },
       onResponse: (response, handler) {
-        print("✅ 收到响应: ${response.data}");
+        // print("✅ 收到响应: ${response.data}");
         return handler.next(response);
       },
       onError: (DioException e, handler) async {
-        print("❌ 请求异常: ${e.message}, 状态码: ${e.response?.statusCode}");
+        // print("❌ 请求异常: ${e.message}, 状态码: ${e.response?.statusCode}");
 
         // 当后端返回 401 (未登录或 Token 过期/无效) 时
         if (e.response?.statusCode == 401) {

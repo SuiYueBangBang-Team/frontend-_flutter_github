@@ -53,7 +53,7 @@ class _HealthPageState extends State<HealthPage> {
       SharedPreferences prefs = await SharedPreferences.getInstance();
       int savedCount = prefs.getInt('elder_remind_count') ?? -1;
 
-      print("【长辈端轮询】当前后端次数: $currentCount，本地持久化旧次数: $savedCount");
+      // print("【长辈端轮询】当前后端次数: $currentCount，本地持久化旧次数: $savedCount");
 
       if (savedCount == -1) {
         // 1️⃣ 第一次打开APP / 退出重登后缓存被清空
@@ -61,27 +61,27 @@ class _HealthPageState extends State<HealthPage> {
 
         // 💡 核心修复：如果退出重登后发现后端有未读的提醒(大于0)，直接弹窗！不再吞掉！
         if (currentCount > 0) {
-          print("【长辈端轮询】🚨 刚登录发现未读的提醒！立刻触发弹窗！");
+          // print("【长辈端轮询】🚨 刚登录发现未读的提醒！立刻触发弹窗！");
           _showElderWarningDialog();
         } else {
-          print("【长辈端轮询】初始化基准完毕，当前无提醒。");
+          // print("【长辈端轮询】初始化基准完毕，当前无提醒。");
         }
 
       } else if (currentCount > savedCount) {
         // 2️⃣ 正常停留页面时：次数增加，说明子女刚按了按钮
         await prefs.setInt('elder_remind_count', currentCount);
-        print("【长辈端轮询】🚨 发现新提醒！立刻触发弹窗！");
+        // print("【长辈端轮询】🚨 发现新提醒！立刻触发弹窗！");
         _showElderWarningDialog();
 
       } else if (currentCount < savedCount) {
         // 3️⃣ 💡 隐藏Bug修复：如果到了第二天后端Redis清零了，本地必须同步归零！
         // 否则 1 < 15 永远不成立，第二天再也收不到提醒了！
         await prefs.setInt('elder_remind_count', currentCount);
-        print("【长辈端轮询】🔄 新的一天，后端次数已重置，本地同步归零！");
+        // print("【长辈端轮询】🔄 新的一天，后端次数已重置，本地同步归零！");
       }
 
     } catch (e) {
-      debugPrint("【长辈端轮询】报错拉取失败: $e");
+      // debugPrint("【长辈端轮询】报错拉取失败: $e");
     }
   }
 

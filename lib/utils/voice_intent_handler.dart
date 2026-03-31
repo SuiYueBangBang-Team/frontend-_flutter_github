@@ -7,19 +7,22 @@ class VoiceIntentHandler {
 
   // 💡 2. 新增：专门对接 Android 无障碍服务的通道 (需与原生端命名一致)
   static const MethodChannel _accessibilityChannel =
-  MethodChannel('com.yourcompany.phone_java/accessibility');
+      MethodChannel('com.yourcompany.phone_java/accessibility');
 
-  // 💡 3. 悬浮窗通道
+  // 悬浮窗相关功能 (暂时禁用)
+  /* 💡 3. 悬浮窗通道
   static const MethodChannel _floatChannel =
       MethodChannel('com.yourcompany.phone_java/float_window');
+  */
 
-  // 注册悬浮窗长按回调（暂时禁用）
-  static void setFloatLongPressCallbacks({
-    Function()? onStart,
-    Function()? onEnd,
-  }) {}
+  // // 注册悬浮窗长按回调（暂时禁用）
+  // static void setFloatLongPressCallbacks({
+  //   Function()? onStart,
+  //   Function()? onEnd,
+  // } ){}
 
-  // 启动悬浮窗
+  // 启动悬浮窗 (暂时禁用)
+  /*
   static Future<void> showFloatWindow() async {
     try {
       await _floatChannel.invokeMethod('show');
@@ -27,8 +30,10 @@ class VoiceIntentHandler {
       print("显示悬浮窗失败: $e");
     }
   }
+  */
 
-  // 隐藏悬浮窗
+  // 隐藏悬浮窗 (暂时禁用)
+  /*
   static Future<void> hideFloatWindow() async {
     try {
       await _floatChannel.invokeMethod('hide');
@@ -36,8 +41,10 @@ class VoiceIntentHandler {
       print("隐藏悬浮窗失败: $e");
     }
   }
+  */
 
-  // 更新悬浮窗录制状态样式
+  // 更新悬浮窗录制状态样式 (暂时禁用)
+  /*
   static Future<void> updateFloatRecordingState(bool recording) async {
     try {
       await _floatChannel.invokeMethod('updateRecording', {'recording': recording});
@@ -45,6 +52,7 @@ class VoiceIntentHandler {
       print("更新悬浮窗录制状态失败: $e");
     }
   }
+  */
 
   static final Map<String, Future<void> Function(Map<String, dynamic>)> _handlers = {
     'MEITUAN_SEARCH': _openMeituanSearch,
