@@ -19,8 +19,8 @@ public class MainActivity extends FlutterActivity {
     private static final String ACCESSIBILITY_CHANNEL = "com.yourcompany.phone_java/accessibility";
     private static final String FLOAT_CHANNEL = "com.yourcompany.phone_java/float_window";
 
-    public static final String PREF_NAME = "voice_automation";
-    public static final String KEY_WECHAT_CONTACT = "wechat_target_contact";
+    public static final String PREF_NAME = "com.example.phone_java";
+    public static final String KEY_WECHAT_CONTACT = "wechat_contact";
     public static final String KEY_WECHAT_REQUEST_ID = "wechat_request_id";
 
     @Override
@@ -73,7 +73,10 @@ public class MainActivity extends FlutterActivity {
     }
 
     private boolean cacheWeChatTargetAndLaunch(String contact) {
+        android.util.Log.d(TAG, "✅ cacheWeChatTargetAndLaunch 被调用，contact = " + contact);
+
         if (contact == null || contact.trim().isEmpty()) {
+            android.util.Log.e(TAG, "❌ contact 为空，直接返回 false");
             return false;
         }
 
@@ -83,14 +86,24 @@ public class MainActivity extends FlutterActivity {
                 .putLong(KEY_WECHAT_REQUEST_ID, System.currentTimeMillis())
                 .apply();
 
-        Intent launchIntent = getPackageManager().getLaunchIntentForPackage("com.tencent.mm");
+        android.util.Log.d(TAG, "✅ SharedPreferences 写入完成:");
+        android.util.Log.d(TAG, "   - PREF_NAME: " + PREF_NAME);
+        android.util.Log.d(TAG, "   - KEY_WECHAT_CONTACT: " + KEY_WECHAT_CONTACT + " = " + contact.trim());
+        android.util.Log.d(TAG, "   - KEY_WECHAT_REQUEST_ID: " + System.currentTimeMillis());
+
+        Intent launchIntent = getPackageManager().getLaunchIntentForPackage(WECHAT_PACKAGE);
         if (launchIntent != null) {
             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             startActivity(launchIntent);
+            android.util.Log.d(TAG, "✅ 微信已启动！");
             return true;
         }
+        android.util.Log.e(TAG, "❌ 未找到微信包名: " + WECHAT_PACKAGE);
         return false;
     }
+
+    private static final String TAG = "MainActivity";
+    private static final String WECHAT_PACKAGE = "com.tencent.mm";
 
     private boolean openAppByName(String appName) {
         android.util.Log.d("MainActivity", "openAppByName() 被调用，appName = " + appName);

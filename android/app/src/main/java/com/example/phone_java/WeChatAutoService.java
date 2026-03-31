@@ -56,22 +56,40 @@ public class WeChatAutoService extends AccessibilityService {
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
-        if (event == null || event.getPackageName() == null) return;
-        if (!WECHAT_PACKAGE.contentEquals(event.getPackageName())) return;
+        Log.d(TAG, ">>> onAccessibilityEvent 触发: " + event);
+
+        if (event == null || event.getPackageName() == null) {
+            Log.w(TAG, "event 或 packageName 为 null，跳过");
+            return;
+        }
+        if (!WECHAT_PACKAGE.contentEquals(event.getPackageName())) {
+            Log.w(TAG, "不是微信的事件: " + event.getPackageName() + "，跳过");
+            return;
+        }
 
         long pendingRequestId = getPendingRequestId();
+        String pendingContact = getPendingContact();
+
+        Log.d(TAG, "当前 SharedPreferences 状态:");
+        Log.d(TAG, "   - pendingRequestId: " + pendingRequestId);
+        Log.d(TAG, "   - pendingContact: [" + pendingContact + "]");
+        Log.d(TAG, "   - lastHandledRequestId: " + lastHandledRequestId);
+        Log.d(TAG, "   - 当前 step: " + step);
+
         if (pendingRequestId > 0 && pendingRequestId != lastHandledRequestId) {
-            String pendingContact = getPendingContact();
             if (!pendingContact.isEmpty()) {
                 targetContact = pendingContact;
                 step = STEP_OPEN_SEARCH;
                 lastHandledRequestId = pendingRequestId;
                 stepStartTime = System.currentTimeMillis();
-                Log.d(TAG, "========== 开始新任务：拨打给 " + targetContact + " ==========");
+                Log.d(TAG, "========== 🎯 检测到新任务：拨打给 " + targetContact + " ==========");
             }
         }
 
-        if (step == STEP_IDLE) return;
+        if (step == STEP_IDLE) {
+            Log.d(TAG, "当前 step 为 IDLE，不执行状态机");
+            return;
+        }
 
         if (System.currentTimeMillis() - stepStartTime > 15000) {
             Log.e(TAG, "步骤超时卡死，强制重置状态机！当前停留在 step=" + step);
