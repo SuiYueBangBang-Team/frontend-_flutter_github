@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:intl/intl.dart' hide TextDirection; // 💡 隐藏 intl 里的 TextDirection，解决命名冲突
-import '../../utils/api_client.dart'; // 💡 引入请求客户端
+import 'package:intl/intl.dart' hide TextDirection;
+import '../../utils/api_client.dart';
 import 'post_detail_page.dart';
 
 class ChildCommunityPage extends StatefulWidget {
@@ -26,7 +26,7 @@ class _ChildCommunityPageState extends State<ChildCommunityPage> {
 
   String openType = "";
 
-  String currentUserId = ""; // 💡 用于判断帖子是不是自己发的
+  String currentUserId = "";
   String currentUserNickname = "";
   String currentUserAvatar = "";
 
@@ -40,21 +40,18 @@ class _ChildCommunityPageState extends State<ChildCommunityPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    loadPostList(); // 每次进入页面刷新
+    loadPostList();
   }
 
-  // 💡 获取当前登录用户的信息
   loadUserInfo() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      // 假设你在登录成功时保存了 userId
       currentUserId = prefs.getString("userId") ?? "";
       currentUserNickname = prefs.getString("nickname") ?? "";
       currentUserAvatar = prefs.getString("avatarUrl") ?? "";
     });
   }
 
-  // 省市县假数据 (用于筛选)
   loadProvinceList() {
     provinces = ["全部省份", "广东省", "北京市", "上海市", "浙江省", "江苏省"];
     setState(() {});
@@ -79,14 +76,10 @@ class _ChildCommunityPageState extends State<ChildCommunityPage> {
     setState(() {});
   }
 
-  // ==========================================
-  // 🌐 真实接口：获取帖子列表
-  // ==========================================
   Future<void> loadPostList() async {
     setState(() => isLoading = true);
 
     try {
-      // 构建动态查询参数
       List<String> queryParams = [];
       if (province != null && province != "全部省份") queryParams.add("province=$province");
       if (city != null && city != "全部城市") queryParams.add("city=$city");
@@ -104,17 +97,20 @@ class _ChildCommunityPageState extends State<ChildCommunityPage> {
           postList = list.map((e) {
             Map<String, dynamic> post = Map<String, dynamic>.from(e);
 
-            // 💡 解析后端逗号分隔的图片字符串
-            String imageStr = post['images'] ?? "";
-            post['imagesList'] = imageStr.isNotEmpty ? imageStr.split(',') : [];
+            var imageStr = post['images'];
+            if (imageStr is String) {
+              post['imagesList'] = imageStr.isNotEmpty ? imageStr.split(',') : [];
+            } else if (imageStr is List) {
+              post['imagesList'] = imageStr;
+            } else {
+              post['imagesList'] = [];
+            }
 
-            // 判断是否是自己发布的
             post['isMe'] = post['userId'].toString() == currentUserId;
 
-            // 格式化时间 (防止空指针)
             if (post['createTime'] != null) {
               DateTime dt = DateTime.parse(post['createTime']).toLocal();
-              post['time'] = DateFormat('yyyy-MM-dd HH:mm').format(dt);
+              post['time'] = DateFormat('MM-dd HH:mm').format(dt);
             } else {
               post['time'] = "刚刚";
             }
@@ -129,55 +125,43 @@ class _ChildCommunityPageState extends State<ChildCommunityPage> {
     }
   }
 
-  // ==========================================
-  // 🌐 真实接口：删除自己的帖子
-  // ==========================================
   Future<void> deletePost(int index) async {
     var post = postList[index];
     int postId = post['postId'];
 
-    // 乐观更新：先在 UI 上删掉
     setState(() => postList.removeAt(index));
 
     try {
       await ApiClient().delete('/api/community/post/$postId');
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("删除成功")));
     } catch (e) {
-      // 删除失败则恢复列表
       setState(() => postList.insert(index, post));
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("删除失败，请重试")));
     }
   }
 
-  // ==========================================
-  // 🌐 真实接口：点赞 / 取消点赞
-  // ==========================================
   Future<void> toggleLike(int index) async {
     var post = postList[index];
     int postId = post['postId'];
     bool currentLiked = post['isLikedByMe'] ?? false;
     int currentLikeCount = post['likeCount'] ?? 0;
 
-    // 乐观更新 UI
     setState(() {
       post['isLikedByMe'] = !currentLiked;
       post['likeCount'] = currentLiked ? currentLikeCount - 1 : currentLikeCount + 1;
     });
 
     try {
-      // 根据后端，使用 POST 传递 postId 参数
       await ApiClient().post('/api/community/post/like?postId=$postId');
     } catch (e) {
-      // 失败则回滚 UI
       setState(() {
         post['isLikedByMe'] = currentLiked;
         post['likeCount'] = currentLikeCount;
       });
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("操作失败，请检查网络")));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("操作失败")));
     }
   }
 
-  /// 展开列表组件
   Widget expandList() {
     List<String> data = [];
     if (openType == "province") data = provinces;
@@ -211,7 +195,7 @@ class _ChildCommunityPageState extends State<ChildCommunityPage> {
                   district = e == "全部区县" ? null : e;
                 }
                 openType = "";
-                loadPostList(); // 筛选条件改变后，自动请求后端刷新
+                loadPostList();
               });
             },
           );
@@ -220,7 +204,6 @@ class _ChildCommunityPageState extends State<ChildCommunityPage> {
     );
   }
 
-  /// 筛选按钮组件
   Widget regionBtn({required String text, required String type}) {
     return Expanded(
       child: GestureDetector(
@@ -242,12 +225,10 @@ class _ChildCommunityPageState extends State<ChildCommunityPage> {
     );
   }
 
-  /// 查看自己发布的帖子
   viewMyPosts() {
     Navigator.pushNamed(context, "/myPostPage").then((_) => loadPostList());
   }
 
-  /// 图片网格组件
   Widget buildImageGrid(List images) {
     if (images.isEmpty) return const SizedBox();
     int imageCount = images.length;
@@ -275,23 +256,26 @@ class _ChildCommunityPageState extends State<ChildCommunityPage> {
         }
         return ClipRRect(
           borderRadius: BorderRadius.circular(6),
-          child: Image.network(images[index], fit: BoxFit.cover, errorBuilder: (context, error, stackTrace) => Container(color: Colors.grey[200], child: const Icon(Icons.image_not_supported, color: Colors.grey))),
+          child: Image.network(
+              images[index],
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) => Container(color: Colors.grey[200], child: const Icon(Icons.image_not_supported, color: Colors.grey))
+          ),
         );
       },
     );
   }
 
-  /// 帖子卡片组件
   Widget postCard(Map<String, dynamic> post, int index) {
     bool isLikedByMe = post["isLikedByMe"] ?? false;
     int likeCount = post["likeCount"] ?? 0;
-    List images = post["imagesList"] ?? []; // 使用解析后的数组
+    List images = post["imagesList"] ?? [];
     bool isMe = post["isMe"] ?? false;
 
-    // TODO: 后端目前没有连表查询头像，这里暂时随机头像，后续后端完善后替换
+    String postAvatarUrl = post['avatarUrl'] ?? "";
     String displayAvatarUrl = isMe && currentUserAvatar.isNotEmpty
         ? currentUserAvatar
-        : "https://i.pravatar.cc/150?u=${post['userId']}";
+        : postAvatarUrl;
 
     return GestureDetector(
       onTap: () {
@@ -307,14 +291,22 @@ class _ChildCommunityPageState extends State<ChildCommunityPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            /// 头像 + 昵称 + 时间 + 我标签
             ListTile(
-              leading: CircleAvatar(radius: 26, backgroundImage: NetworkImage(displayAvatarUrl)),
+              leading: CircleAvatar(
+                radius: 26,
+                backgroundColor: Colors.grey.shade200,
+                // 💡 彻底抛弃本地图片，改用内置 Icon 兜底
+                backgroundImage: displayAvatarUrl.isNotEmpty ? NetworkImage(displayAvatarUrl) : null,
+                child: displayAvatarUrl.isEmpty ? const Icon(Icons.person, color: Colors.grey, size: 30) : null,
+              ),
               title: Row(
                 children: [
-                  Text(
-                    isMe ? (currentUserNickname.isNotEmpty ? currentUserNickname : "我") : (post["authorName"] ?? "社区用户"),
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.orange),
+                  Flexible(
+                    child: Text(
+                      isMe ? (currentUserNickname.isNotEmpty ? currentUserNickname : "我") : (post["authorName"] ?? "社区用户"),
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.orange),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                   if (isMe)
                     Container(
@@ -325,7 +317,7 @@ class _ChildCommunityPageState extends State<ChildCommunityPage> {
                     ),
                 ],
               ),
-              subtitle: Text(post["time"] ?? ""),
+              subtitle: Text(post["time"] ?? "", overflow: TextOverflow.ellipsis),
               trailing: isMe
                   ? PopupMenuButton(
                 itemBuilder: (context) => [const PopupMenuItem(value: "delete", child: Text("删除"))],
@@ -333,21 +325,15 @@ class _ChildCommunityPageState extends State<ChildCommunityPage> {
               )
                   : const Icon(Icons.expand_more),
             ),
-
-            /// 正文
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: ExpandableTextWidget(post["content"] ?? "", maxLines: 3),
             ),
             const SizedBox(height: 10),
-
-            /// 图片区域
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: buildImageGrid(images),
             ),
-
-            /// 定位
             if (post["location"] != null && post["location"].toString().isNotEmpty)
               Padding(
                 padding: const EdgeInsets.all(16),
@@ -355,12 +341,10 @@ class _ChildCommunityPageState extends State<ChildCommunityPage> {
                   children: [
                     const Icon(Icons.location_on, size: 16, color: Colors.grey),
                     const SizedBox(width: 6),
-                    Text(post["location"], style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                    Expanded(child: Text(post["location"], style: const TextStyle(color: Colors.grey, fontSize: 13), overflow: TextOverflow.ellipsis)),
                   ],
                 ),
               ),
-
-            /// 评论 + 点赞区域
             const Divider(),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -369,11 +353,11 @@ class _ChildCommunityPageState extends State<ChildCommunityPage> {
                   children: [
                     const Icon(Icons.chat, size: 20),
                     const SizedBox(width: 6),
-                    Text("${post["commentCount"] ?? 0}", style: const TextStyle(fontSize: 14)), // 目前还没评论功能，暂时显示 0
+                    Text("${post["commentCount"] ?? 0}", style: const TextStyle(fontSize: 14)),
                   ],
                 ),
                 GestureDetector(
-                  onTap: () => toggleLike(index), // 💡 触发真实点赞
+                  onTap: () => toggleLike(index),
                   child: Row(
                     children: [
                       Icon(Icons.thumb_up, color: isLikedByMe ? Colors.blue : Colors.grey, size: 20),
@@ -399,8 +383,6 @@ class _ChildCommunityPageState extends State<ChildCommunityPage> {
           Column(
             children: [
               const SizedBox(height: 20),
-
-              /// 搜索栏
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
@@ -412,12 +394,12 @@ class _ChildCommunityPageState extends State<ChildCommunityPage> {
                         decoration: BoxDecoration(color: const Color(0xffe8e7e7), borderRadius: BorderRadius.circular(12)),
                         child: TextField(
                           controller: searchController,
-                          textInputAction: TextInputAction.search, // 软键盘显示为“搜索”
-                          onSubmitted: (value) => loadPostList(),  // 💡 用户按下回车搜索时，请求后端
+                          textInputAction: TextInputAction.search,
+                          onSubmitted: (value) => loadPostList(),
                           decoration: const InputDecoration(
                             hintText: "搜索帖子内容",
                             border: InputBorder.none,
-                            contentPadding: EdgeInsets.symmetric(horizontal: 15, vertical: 12), // 修正对齐
+                            contentPadding: EdgeInsets.symmetric(horizontal: 15, vertical: 12),
                             suffixIcon: Icon(Icons.search, color: Colors.grey),
                           ),
                         ),
@@ -444,10 +426,7 @@ class _ChildCommunityPageState extends State<ChildCommunityPage> {
                   ],
                 ),
               ),
-
               const SizedBox(height: 10),
-
-              /// 筛选栏
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 child: Row(
@@ -458,17 +437,12 @@ class _ChildCommunityPageState extends State<ChildCommunityPage> {
                   ],
                 ),
               ),
-
               const SizedBox(height: 6),
-
-              /// 展开列表区域
               expandList(),
               const SizedBox(height: 10),
-
-              /// 帖子列表
               Expanded(
                 child: RefreshIndicator(
-                  onRefresh: loadPostList, // 下拉刷新
+                  onRefresh: loadPostList,
                   child: isLoading
                       ? const Center(child: CircularProgressIndicator())
                       : postList.isEmpty
@@ -481,8 +455,6 @@ class _ChildCommunityPageState extends State<ChildCommunityPage> {
               ),
             ],
           ),
-
-          /// 我的帖子按钮
           Positioned(
             bottom: 135,
             right: 16,
@@ -492,7 +464,7 @@ class _ChildCommunityPageState extends State<ChildCommunityPage> {
                 width: 120, height: 48, alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: const Color(0xff2d8cf0),
-                  borderRadius: BorderRadius.circular(24), // 改为药丸形状更美观
+                  borderRadius: BorderRadius.circular(24),
                   boxShadow: [BoxShadow(color: Colors.blue.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 5))],
                 ),
                 child: const Text("我的帖子", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500)),
@@ -505,20 +477,15 @@ class _ChildCommunityPageState extends State<ChildCommunityPage> {
   }
 }
 
-// 文本展开组件保持不变
 class ExpandableTextWidget extends StatefulWidget {
   final String text;
   final int maxLines;
-
   const ExpandableTextWidget(this.text, {super.key, this.maxLines = 3});
-
   @override
   State<ExpandableTextWidget> createState() => _ExpandableTextWidgetState();
 }
-
 class _ExpandableTextWidgetState extends State<ExpandableTextWidget> {
   bool expanded = false;
-
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -526,7 +493,6 @@ class _ExpandableTextWidgetState extends State<ExpandableTextWidget> {
         final span = TextSpan(text: widget.text, style: const TextStyle(fontSize: 16));
         final painter = TextPainter(text: span, maxLines: widget.maxLines, textDirection: TextDirection.ltr)..layout(maxWidth: size.maxWidth);
         final overflow = painter.didExceedMaxLines;
-
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -534,10 +500,7 @@ class _ExpandableTextWidgetState extends State<ExpandableTextWidget> {
             if (overflow)
               GestureDetector(
                 onTap: () => setState(() => expanded = !expanded),
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(expanded ? "收起" : "全文", style: const TextStyle(color: Colors.blue, fontSize: 14)),
-                ),
+                child: Padding(padding: const EdgeInsets.only(top: 4), child: Text(expanded ? "收起" : "全文", style: const TextStyle(color: Colors.blue, fontSize: 14))),
               )
           ],
         );
