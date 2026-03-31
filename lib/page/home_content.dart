@@ -41,6 +41,8 @@ class _HomeContentState extends State<HomeContent> with SingleTickerProviderStat
   void initState() {
     super.initState();
     _waveController = AnimationController(vsync: this, duration: const Duration(seconds: 2));
+    // App 启动后自动显示悬浮窗
+    VoiceIntentHandler.showFloatWindow();
   }
 
   void _scrollToBottom() {

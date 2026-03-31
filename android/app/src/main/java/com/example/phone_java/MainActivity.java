@@ -17,6 +17,7 @@ import io.flutter.plugin.common.MethodChannel;
 public class MainActivity extends FlutterActivity {
     private static final String CHANNEL = "voice_intent";
     private static final String ACCESSIBILITY_CHANNEL = "com.yourcompany.phone_java/accessibility";
+    private static final String FLOAT_CHANNEL = "com.yourcompany.phone_java/float_window";
 
     public static final String PREF_NAME = "voice_automation";
     public static final String KEY_WECHAT_CONTACT = "wechat_target_contact";
@@ -50,6 +51,25 @@ public class MainActivity extends FlutterActivity {
                         result.notImplemented();
                     }
                 });
+
+        new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), FLOAT_CHANNEL)
+                .setMethodCallHandler((call, result) -> {
+                    if ("show".equals(call.method)) {
+                        FloatWindowService.show(MainActivity.this);
+                        result.success(true);
+                    } else if ("hide".equals(call.method)) {
+                        FloatWindowService.hide(MainActivity.this);
+                        result.success(true);
+                    } else if ("updateRecording".equals(call.method)) {
+                        boolean recording = call.argument("recording");
+                        FloatWindowService.updateRecordingState(MainActivity.this, recording);
+                        result.success(true);
+                    } else {
+                        result.notImplemented();
+                    }
+                });
+
+        // 监听悬浮窗的语音事件，透传到 Flutter（暂时禁用）
     }
 
     private boolean cacheWeChatTargetAndLaunch(String contact) {

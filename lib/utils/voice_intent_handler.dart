@@ -9,6 +9,43 @@ class VoiceIntentHandler {
   static const MethodChannel _accessibilityChannel =
   MethodChannel('com.yourcompany.phone_java/accessibility');
 
+  // 💡 3. 悬浮窗通道
+  static const MethodChannel _floatChannel =
+      MethodChannel('com.yourcompany.phone_java/float_window');
+
+  // 注册悬浮窗长按回调（暂时禁用）
+  static void setFloatLongPressCallbacks({
+    Function()? onStart,
+    Function()? onEnd,
+  }) {}
+
+  // 启动悬浮窗
+  static Future<void> showFloatWindow() async {
+    try {
+      await _floatChannel.invokeMethod('show');
+    } catch (e) {
+      print("显示悬浮窗失败: $e");
+    }
+  }
+
+  // 隐藏悬浮窗
+  static Future<void> hideFloatWindow() async {
+    try {
+      await _floatChannel.invokeMethod('hide');
+    } catch (e) {
+      print("隐藏悬浮窗失败: $e");
+    }
+  }
+
+  // 更新悬浮窗录制状态样式
+  static Future<void> updateFloatRecordingState(bool recording) async {
+    try {
+      await _floatChannel.invokeMethod('updateRecording', {'recording': recording});
+    } catch (e) {
+      print("更新悬浮窗录制状态失败: $e");
+    }
+  }
+
   static final Map<String, Future<void> Function(Map<String, dynamic>)> _handlers = {
     'MEITUAN_SEARCH': _openMeituanSearch,
     'MEITUAN': _openMeituanHome,
