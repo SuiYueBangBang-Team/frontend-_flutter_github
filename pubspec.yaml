@@ -33,6 +33,7 @@ dependencies:
   flutter_baidu_mapapi_search: 3.9.9+1
   flutter_baidu_mapapi_utils: 3.9.9+1
   flutter_bmflocation: 3.8.4
+  permission_handler: ^12.0.1
 
 
 dev_dependencies:

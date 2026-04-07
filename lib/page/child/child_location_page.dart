@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import 'dart:math';
 import '../../utils/api_client.dart'; // 💡 引入真实请求客户端
 
 // 💡 引入基础地图库与工具
 import 'package:flutter_baidu_mapapi_base/flutter_baidu_mapapi_base.dart'; //
 import 'package:flutter_baidu_mapapi_map/flutter_baidu_mapapi_map.dart'; //
+
+// 💡 使用这个标准的包引入，它完美兼容最新版的所有接口
+import 'package:flutter_bmflocation/flutter_bmflocation.dart';
+import 'package:permission_handler/permission_handler.dart'; // 用于申请定位权限
+
 
 class ChildLocationPage extends StatefulWidget {
   const ChildLocationPage({super.key});
@@ -19,13 +23,74 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
   bool isLoading = true;
   bool _isTrackingLocked = false;
   String? selectedDeviceId;
-
   // 💡 新增：百度地图控制器
   BMFMapController? myMapController;
 
+  // 初始化定位插件类
+  final LocationFlutterPlugin _locationPlugin = LocationFlutterPlugin(); //
+  bool _isFirstLocation = true; // 用于首次定位时移动地图视角
+
+// 请求定位权限
+  Future<void> _requestPermissionAndLocate() async {
+    PermissionStatus status = await Permission.location.request();
+    if (status.isGranted) {
+      _initLocation();
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("需要定位权限才能显示您的当前位置")));
+      }
+    }
+  }
+
+  // 初始化并开启真实定位
+  void _initLocation() async {
+    try {
+      debugPrint("📌 定位流程 1: 正在设置隐私政策...");
+      _locationPlugin.setAgreePrivacy(true);
+
+      debugPrint("📌 定位流程 2: 正在初始化参数...");
+      BaiduLocationAndroidOption androidOption = BaiduLocationAndroidOption(
+        locationMode: BMFLocationMode.hightAccuracy,
+        isNeedAddress: true,
+        openGps: true,
+        coordType: BMFLocationCoordType.bd09ll,
+        scanspan: 2000,
+      );
+      await _locationPlugin.prepareLoc(androidOption.getMap(), {});
+
+      debugPrint("📌 定位流程 3: 正在注册定位回调...");
+      _locationPlugin.seriesLocationCallback(callback: (BaiduLocation result) {
+        // 💡 无论成功失败，只要百度给回应了，就会打印这句话
+        debugPrint("📍 百度定位回调到达! 错误码=${result.errorCode}, 经度=${result.longitude}, 纬度=${result.latitude}");
+
+        if (!mounted) return;
+        if (result.latitude != null && result.longitude != null && result.latitude! > 1.0) {
+          setState(() {
+            myLocation['lat'] = result.latitude!;
+            myLocation['lng'] = result.longitude!;
+          });
+          _updateMapOverlays();
+          if (_isFirstLocation && myMapController != null && !_isTrackingLocked) {
+            myMapController?.setCenterCoordinate(
+                BMFCoordinate(result.latitude!, result.longitude!), true);
+            _isFirstLocation = false;
+          }
+        }
+      });
+
+      debugPrint("📌 定位流程 4: 发送启动定位指令...");
+      await _locationPlugin.startLocation();
+      debugPrint("📌 定位流程 5: 启动指令发送成功，等待百度回调...");
+
+    } catch (e) {
+      debugPrint("❌ 定位流程发生异常: $e");
+    }
+  }
+
   Map<String, double> myLocation = {
-    "lat": 30.5450,
-    "lng": 114.3100,
+    "lat": 23.112724,
+    "lng": 113.259987,
   };
 
   Timer? _realtimeTimer;
@@ -33,13 +98,16 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
   @override
   void initState() {
     super.initState();
-    _fetchLocationData(); // 💡 页面初始化时拉取真实设备列表
+    _fetchLocationData();
+    _requestPermissionAndLocate(); // 启动真实定位
     _startRealtimeTracking();
   }
 
   @override
   void dispose() {
     _realtimeTimer?.cancel();
+    // 停止定位，防止内存泄漏
+    _locationPlugin.stopLocation(); // [cite: 20]
     super.dispose();
   }
 
@@ -59,10 +127,10 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
             "id": e['id'].toString(),
             "name": e['name'] ?? "未知设备",
             "status": e['status'] ?? "离线",
-            // ⚠️ 注意：目前后端 DeviceVO 尚未提供真实的经纬度，这里先随机生成偏移坐标，以免地图报错。
-            // 未来后端增加了 lat/lng 后，直接替换为 e['lat'] 即可。
-            "lat": 30.5450 + (Random().nextDouble() - 0.5) * 0.01,
-            "lng": 114.3100 + (Random().nextDouble() - 0.5) * 0.01,
+            // ✅ 替换为直接读取后端真实数据
+            "lat": e['lat'] ?? 30.5450, // 赋一个默认值兜底
+            "lng": e['lng'] ?? 114.3100,
+
             "battery": e['batteryLevel'] ?? 0,
             "volume": e['volumeLevel'] ?? 0,
             "isOnline": e['isOnline'] ?? false,
@@ -83,26 +151,16 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
     }
   }
 
-  // 💡 模拟坐标跳动 (保留原有功能)
+
   void _startRealtimeTracking() {
-    _realtimeTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+    // 建议把频率降到 5-10 秒一次，避免后端接口压力过大
+    _realtimeTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
       if (!mounted) return;
-      setState(() {
-        myLocation['lat'] = myLocation['lat']! + 0.0001;
-        myLocation['lng'] = myLocation['lng']! + 0.00005;
 
-        for (var device in boundDevices) {
-          // 仅模拟在线设备的轻微移动
-          if (device['isOnline'] == true) {
-            device['lat'] += (Random().nextDouble() - 0.5) * 0.0002;
-            device['lng'] += (Random().nextDouble() - 0.5) * 0.0002;
-          }
-        }
-      });
-// 💡 坐标跳动后，刷新百度地图覆盖物
-      _updateMapOverlays();
+      // 1. 每隔一段时间，去后端拉取一次长辈的最新位置
+      _fetchLocationData();
 
-      // 💡 跟踪逻辑：若开启了导航居中且存在选中设备，则转移地图视角
+      // 2. 视角追踪逻辑保留,跟踪逻辑：若开启了导航居中且存在选中设备，则转移地图视角
       if (_isTrackingLocked && selectedDeviceId != null) {
         var targetDevice = boundDevices.firstWhere((d) => d['id'] == selectedDeviceId, orElse: () => {});
         if (targetDevice.isNotEmpty && targetDevice['isOnline'] == true) {
@@ -110,9 +168,9 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
               BMFCoordinate(targetDevice['lat'], targetDevice['lng']), true);
         }
       }
-
     });
   }
+
 
 // 💡 核心新增：绘制真实地图覆盖物
   void _updateMapOverlays() {
