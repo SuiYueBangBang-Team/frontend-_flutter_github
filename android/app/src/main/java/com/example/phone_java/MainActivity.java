@@ -22,6 +22,7 @@ public class MainActivity extends FlutterActivity {
     public static final String PREF_NAME = "com.example.phone_java";
     public static final String KEY_WECHAT_CONTACT = "wechat_contact";
     public static final String KEY_WECHAT_REQUEST_ID = "wechat_request_id";
+    public static final String KEY_WECHAT_SCAN_REQUEST_ID = "wechat_scan_request_id";
 
     @Override
     public void configureFlutterEngine(@NonNull FlutterEngine flutterEngine) {
@@ -46,6 +47,14 @@ public class MainActivity extends FlutterActivity {
                     if ("startWeChatCall".equals(call.method)) {
                         String contact = call.argument("contact");
                         boolean ok = cacheWeChatTargetAndLaunch(contact);
+                        result.success(ok);
+                    } else if ("startWeChatSendMessage".equals(call.method)) {
+                        String contact = call.argument("contact");
+                        String message = call.argument("message");
+                        boolean ok = cacheWeChatSendAndLaunch(contact, message);
+                        result.success(ok);
+                    } else if ("startWeChatScan".equals(call.method)) {
+                        boolean ok = cacheWeChatScanAndLaunch();
                         result.success(ok);
                     } else {
                         result.notImplemented();
@@ -99,6 +108,48 @@ public class MainActivity extends FlutterActivity {
             return true;
         }
         android.util.Log.e(TAG, "❌ 未找到微信包名: " + WECHAT_PACKAGE);
+        return false;
+    }
+
+    // 缓存微信发消息参数并拉起微信
+    private boolean cacheWeChatSendAndLaunch(String contact, String message) {
+        if (contact == null || contact.trim().isEmpty() || message == null || message.trim().isEmpty()) {
+            android.util.Log.e(TAG, "❌ contact 或 message 为空，拒绝执行");
+            return false;
+        }
+        SharedPreferences prefs = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        prefs.edit()
+                .putString(KEY_WECHAT_CONTACT, contact.trim())
+                .putString("wechat_message", message.trim())
+                .putLong(KEY_WECHAT_REQUEST_ID, System.currentTimeMillis())
+                .apply();
+        android.util.Log.d(TAG, "✅ 微信发消息参数缓存: contact=" + contact.trim() + ", message=" + message.trim());
+        Intent launchIntent = getPackageManager().getLaunchIntentForPackage(WECHAT_PACKAGE);
+        if (launchIntent != null) {
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(launchIntent);
+            android.util.Log.d(TAG, "✅ 微信已启动，等待无障碍服务自动化");
+            return true;
+        }
+        android.util.Log.e(TAG, "❌ 未找到微信包名");
+        return false;
+    }
+
+    /** 拉起微信并由无障碍服务打开主界面「扫一扫」 */
+    private boolean cacheWeChatScanAndLaunch() {
+        SharedPreferences prefs = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        prefs.edit()
+                .putLong(KEY_WECHAT_SCAN_REQUEST_ID, System.currentTimeMillis())
+                .apply();
+        android.util.Log.d(TAG, "✅ 微信扫一扫任务已写入 wechat_scan_request_id");
+        Intent launchIntent = getPackageManager().getLaunchIntentForPackage(WECHAT_PACKAGE);
+        if (launchIntent != null) {
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(launchIntent);
+            android.util.Log.d(TAG, "✅ 微信已启动，等待无障碍打开扫一扫");
+            return true;
+        }
+        android.util.Log.e(TAG, "❌ 未找到微信包名");
         return false;
     }
 

@@ -25,7 +25,17 @@ public class WeChatAutoService extends AccessibilityService {
     // 核心节点 ID
     private static final String ID_SEARCH_ENTRY = "com.tencent.mm:id/jha";
     private static final String ID_SEARCH_INPUT = "com.tencent.mm:id/d98";
+    /** 聊天页右下角加号面板用 */
     private static final String ID_MORE_FUNCTION = "com.tencent.mm:id/bjz";
+    /** 微信首页（会话列表）右上角「更多功能」Button，content-desc 为「更多功能」 */
+    private static final String ID_MAIN_MORE = "com.tencent.mm:id/jga";
+    /** 首页 + 菜单中「扫一扫」文案；父行可选 n7g */
+    private static final String ID_SCAN_MENU_TEXT = "com.tencent.mm:id/obc";
+    private static final String ID_SCAN_MENU_ROW = "com.tencent.mm:id/n7g";
+    // 发送区：输入框旁「发送」为 Button，resource-id 以 Appium/布局树为准（微信版本变更时需再抓）
+    private static final String ID_SEND_BTN = "com.tencent.mm:id/bql";
+    /** 发送按钮所在输入栏外层 LinearLayout，便于在子树内精确定位 */
+    private static final String ID_SEND_BAR = "com.tencent.mm:id/bqn";
 
     // 状态机常量
     private static final int STEP_IDLE = 0;
@@ -35,11 +45,18 @@ public class WeChatAutoService extends AccessibilityService {
     private static final int STEP_CLICK_PLUS = 4;
     private static final int STEP_CLICK_PANEL_VIDEO = 5;
     private static final int STEP_CLICK_POPUP_VOICE = 6;
+    private static final int STEP_INPUT_MESSAGE = 7;   // 发消息：输入消息文字
+    private static final int STEP_CLICK_SEND    = 8;   // 发消息：点击发送按钮
+    /** 无障碍打开「扫一扫」：主界面点 + 菜单 */
+    private static final int STEP_SCAN_MAIN_MORE = 20;
+    private static final int STEP_SCAN_MENU_ITEM = 21;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private int step = STEP_IDLE;
     private String targetContact = "";
+    private String targetMessage = "";
     private long lastHandledRequestId = -1L;
+    private long lastHandledScanRequestId = -1L;
     private long stepStartTime = 0L;
 
     @Override
@@ -69,6 +86,7 @@ public class WeChatAutoService extends AccessibilityService {
 
         long pendingRequestId = getPendingRequestId();
         String pendingContact = getPendingContact();
+        String pendingMessage = getPendingMessage();
 
         Log.d(TAG, "当前 SharedPreferences 状态:");
         Log.d(TAG, "   - pendingRequestId: " + pendingRequestId);
@@ -76,13 +94,26 @@ public class WeChatAutoService extends AccessibilityService {
         Log.d(TAG, "   - lastHandledRequestId: " + lastHandledRequestId);
         Log.d(TAG, "   - 当前 step: " + step);
 
-        if (pendingRequestId > 0 && pendingRequestId != lastHandledRequestId) {
+        long pendingScanId = getPendingScanRequestId();
+        if (step == STEP_IDLE && pendingScanId > 0 && pendingScanId != lastHandledScanRequestId) {
+            step = STEP_SCAN_MAIN_MORE;
+            lastHandledScanRequestId = pendingScanId;
+            stepStartTime = System.currentTimeMillis();
+            Log.d(TAG, "========== 📷 检测到新任务：微信扫一扫（无障碍） ==========");
+        }
+
+        if (step == STEP_IDLE && pendingRequestId > 0 && pendingRequestId != lastHandledRequestId) {
             if (!pendingContact.isEmpty()) {
                 targetContact = pendingContact;
+                targetMessage = pendingMessage;
                 step = STEP_OPEN_SEARCH;
                 lastHandledRequestId = pendingRequestId;
                 stepStartTime = System.currentTimeMillis();
-                Log.d(TAG, "========== 🎯 检测到新任务：拨打给 " + targetContact + " ==========");
+                if (!targetMessage.isEmpty()) {
+                    Log.d(TAG, "========== 💬 检测到新任务：给 " + targetContact + " 发消息: " + targetMessage + " ==========");
+                } else {
+                    Log.d(TAG, "========== 📞 检测到新任务：拨打给 " + targetContact + " ==========");
+                }
             }
         }
 
@@ -93,8 +124,12 @@ public class WeChatAutoService extends AccessibilityService {
 
         if (System.currentTimeMillis() - stepStartTime > 15000) {
             Log.e(TAG, "步骤超时卡死，强制重置状态机！当前停留在 step=" + step);
+            if (step == STEP_SCAN_MAIN_MORE || step == STEP_SCAN_MENU_ITEM) {
+                clearPendingScanTask();
+            } else {
+                clearPendingTask();
+            }
             step = STEP_IDLE;
-            clearPendingTask();
             return;
         }
 
@@ -106,7 +141,14 @@ public class WeChatAutoService extends AccessibilityService {
         @Override
         public void run() {
             AccessibilityNodeInfo root = getRootInActiveWindow();
-            if (root == null && step < STEP_CLICK_PANEL_VIDEO) return;
+            if (root == null) {
+                if (step == STEP_SCAN_MAIN_MORE || step == STEP_SCAN_MENU_ITEM) {
+                    handler.removeCallbacks(this);
+                    handler.postDelayed(this, 500);
+                    return;
+                }
+                if (step < STEP_CLICK_PANEL_VIDEO) return;
+            }
 
             boolean success = false;
 
@@ -143,8 +185,33 @@ public class WeChatAutoService extends AccessibilityService {
                 case STEP_CLICK_PLUS:
                     if (clickMoreFunction(root)) {
                         Log.d(TAG, "【4】成功点击聊天页右下角的加号");
-                        step = STEP_CLICK_PANEL_VIDEO;
+                        // 关键分支：targetMessage 非空 → 发消息；空 → 打电话
+                        if (!targetMessage.isEmpty()) {
+                            step = STEP_INPUT_MESSAGE;
+                        } else {
+                            step = STEP_CLICK_PANEL_VIDEO;
+                        }
                         stepStartTime = System.currentTimeMillis();
+                        success = true;
+                    }
+                    break;
+
+                case STEP_INPUT_MESSAGE:
+                    if (inputMessageText(root, targetMessage)) {
+                        Log.d(TAG, "【5💬】成功在输入框填入消息：" + targetMessage);
+                        step = STEP_CLICK_SEND;
+                        stepStartTime = System.currentTimeMillis();
+                        success = true;
+                        handler.postDelayed(this, 500);
+                        return;
+                    }
+                    break;
+
+                case STEP_CLICK_SEND:
+                    if (clickSendButton(root)) {
+                        Log.d(TAG, "【6💬】成功点击发送按钮！消息已发送，任务完成！");
+                        step = STEP_IDLE;
+                        clearPendingTask();
                         success = true;
                     }
                     break;
@@ -164,6 +231,26 @@ public class WeChatAutoService extends AccessibilityService {
                         Log.d(TAG, "【6】成功点击弹窗中的 语音通话！任务完成！");
                         step = STEP_IDLE;
                         clearPendingTask();
+                        success = true;
+                    }
+                    break;
+
+                case STEP_SCAN_MAIN_MORE:
+                    if (clickMainPageMoreForScan(root)) {
+                        Log.d(TAG, "【扫一扫-1】已点击首页「更多功能」");
+                        step = STEP_SCAN_MENU_ITEM;
+                        stepStartTime = System.currentTimeMillis();
+                        success = true;
+                        handler.postDelayed(this, 600);
+                        return;
+                    }
+                    break;
+
+                case STEP_SCAN_MENU_ITEM:
+                    if (clickWeChatScanMenuItem()) {
+                        Log.d(TAG, "【扫一扫-2】已点击「扫一扫」，任务完成");
+                        step = STEP_IDLE;
+                        clearPendingScanTask();
                         success = true;
                     }
                     break;
@@ -239,15 +326,31 @@ public class WeChatAutoService extends AccessibilityService {
         return prefs.getString("wechat_contact", "").trim();
     }
 
+    private String getPendingMessage() {
+        SharedPreferences prefs = getSharedPreferences("com.example.phone_java", Context.MODE_PRIVATE);
+        return prefs.getString("wechat_message", "").trim();
+    }
+
     private long getPendingRequestId() {
         SharedPreferences prefs = getSharedPreferences("com.example.phone_java", Context.MODE_PRIVATE);
         return prefs.getLong("wechat_request_id", -1L);
+    }
+
+    private long getPendingScanRequestId() {
+        SharedPreferences prefs = getSharedPreferences("com.example.phone_java", Context.MODE_PRIVATE);
+        return prefs.getLong("wechat_scan_request_id", -1L);
+    }
+
+    private void clearPendingScanTask() {
+        SharedPreferences prefs = getSharedPreferences("com.example.phone_java", Context.MODE_PRIVATE);
+        prefs.edit().remove("wechat_scan_request_id").apply();
     }
 
     private void clearPendingTask() {
         SharedPreferences prefs = getSharedPreferences("com.example.phone_java", Context.MODE_PRIVATE);
         prefs.edit()
                 .remove("wechat_contact")
+                .remove("wechat_message")
                 .remove("wechat_request_id")
                 .apply();
     }
@@ -285,6 +388,209 @@ public class WeChatAutoService extends AccessibilityService {
     private boolean clickMoreFunction(AccessibilityNodeInfo root) {
         if (clickByViewId(root, ID_MORE_FUNCTION)) return true;
         return clickByAnyDesc(root, "更多功能按钮，已折叠", "更多功能");
+    }
+
+    /** 会话列表页右上角「更多功能」（与聊天页加号不同） */
+    private boolean clickMainPageMoreForScan(AccessibilityNodeInfo root) {
+        if (root == null) return false;
+        Log.d(TAG, "【扫一扫-1】尝试点击首页「更多功能」加号");
+        if (clickByViewId(root, ID_MAIN_MORE)) {
+            Log.d(TAG, "【扫一扫-1】通过ID点击加号成功");
+            return true;
+        }
+        if (clickByAnyDesc(root, "更多功能")) {
+            Log.d(TAG, "【扫一扫-1】通过content-desc点击加号成功");
+            return true;
+        }
+        Log.w(TAG, "【扫一扫-1】未找到加号节点，等待重试");
+        return false;
+    }
+
+    /** + 菜单在独立窗口时遍历所有 Window，修复误点问题 */
+    private boolean clickWeChatScanMenuItem() {
+        List<AccessibilityWindowInfo> windows = getWindows();
+        if (windows == null) return false;
+
+        for (AccessibilityWindowInfo window : windows) {
+            AccessibilityNodeInfo windowRoot = window.getRoot();
+            if (windowRoot == null) continue;
+
+            // 🔴 第一步：优先精准匹配「扫一扫」文本，绝对不先点通用行ID！
+            List<AccessibilityNodeInfo> scanTextNodes = windowRoot.findAccessibilityNodeInfosByText("扫一扫");
+            if (scanTextNodes != null && !scanTextNodes.isEmpty()) {
+                for (AccessibilityNodeInfo textNode : scanTextNodes) {
+                    Log.d(TAG, "【扫一扫-2】匹配到「扫一扫」文本节点: " + textNode);
+                    // 从文本节点向上找可点击的父行（n7g），只点这一行，不会误点其他
+                    AccessibilityNodeInfo clickableParent = findClickableParent(textNode);
+                    if (clickableParent != null) {
+                        if (performClick(clickableParent)) {
+                            Log.d(TAG, "【扫一扫-2】成功点击「扫一扫」文本对应的可点击父行");
+                            return true;
+                        }
+                    }
+                    // 兜底：直接点击文本节点本身
+                    if (performClick(textNode)) {
+                        Log.d(TAG, "【扫一扫-2】成功点击「扫一扫」文本节点");
+                        return true;
+                    }
+                }
+            }
+
+            // 🟡 第二步：兜底匹配「扫一扫」专属ID（obc），只有文本匹配失败时才用
+            List<AccessibilityNodeInfo> scanIdNodes = windowRoot.findAccessibilityNodeInfosByViewId(ID_SCAN_MENU_TEXT);
+            if (scanIdNodes != null && !scanIdNodes.isEmpty()) {
+                for (AccessibilityNodeInfo node : scanIdNodes) {
+                    Log.d(TAG, "【扫一扫-2】匹配到「扫一扫」ID节点: " + node);
+                    if (performClick(node)) {
+                        Log.d(TAG, "【扫一扫-2】成功通过ID点击「扫一扫」");
+                        return true;
+                    }
+                    // 向上找可点击父行兜底
+                    AccessibilityNodeInfo clickableParent = findClickableParent(node);
+                    if (clickableParent != null && performClick(clickableParent)) {
+                        Log.d(TAG, "【扫一扫-2】成功通过ID父行点击「扫一扫」");
+                        return true;
+                    }
+                }
+            }
+
+            // 🟢 第三步：绝对禁止优先匹配通用行ID n7g！只在文本/ID都失败时，兜底精准匹配
+            List<AccessibilityNodeInfo> rowNodes = windowRoot.findAccessibilityNodeInfosByViewId(ID_SCAN_MENU_ROW);
+            if (rowNodes != null && !rowNodes.isEmpty()) {
+                for (AccessibilityNodeInfo row : rowNodes) {
+                    // 遍历行的子节点，确认行内包含「扫一扫」文本，再点击
+                    List<AccessibilityNodeInfo> childTexts = findNodesByAnyText(row, "扫一扫");
+                    if (childTexts != null && !childTexts.isEmpty()) {
+                        Log.d(TAG, "【扫一扫-2】匹配到包含「扫一扫」的行节点: " + row);
+                        if (performClick(row)) {
+                            Log.d(TAG, "【扫一扫-2】成功点击包含「扫一扫」的行");
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        Log.w(TAG, "【扫一扫-2】未找到「扫一扫」节点，等待重试");
+        return false;
+    }
+
+    /** 从节点向上查找最近的可点击父节点（用于菜单项点击） */
+    private AccessibilityNodeInfo findClickableParent(AccessibilityNodeInfo node) {
+        if (node == null) return null;
+        AccessibilityNodeInfo cur = node;
+        while (cur != null) {
+            if (cur.isClickable()) {
+                return cur;
+            }
+            cur = cur.getParent();
+        }
+        return null; // 没找到可点击父节点，返回原节点兜底
+    }
+
+    private boolean clickByViewIdInAllWindows(String viewId) {
+        List<AccessibilityWindowInfo> windows = getWindows();
+        if (windows == null) return false;
+        for (AccessibilityWindowInfo window : windows) {
+            AccessibilityNodeInfo windowRoot = window.getRoot();
+            if (windowRoot != null && clickByViewId(windowRoot, viewId)) return true;
+        }
+        return false;
+    }
+
+    private boolean clickTextInAllWindows(String text) {
+        List<AccessibilityWindowInfo> windows = getWindows();
+        if (windows == null) return false;
+        for (AccessibilityWindowInfo window : windows) {
+            AccessibilityNodeInfo windowRoot = window.getRoot();
+            if (windowRoot != null && clickByAnyText(windowRoot, text)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * 发消息专用：在聊天输入框填入消息文字
+     */
+    private boolean inputMessageText(AccessibilityNodeInfo root, String message) {
+        // 聊天输入框 ID 与搜索框相同（d98），优先按 ID 找，找不到再用 EditText 兜底
+        AccessibilityNodeInfo input = findFirstNodeByViewId(root, ID_SEARCH_INPUT);
+        if (input == null) {
+            input = findFirstNodeByClass(root, "android.widget.EditText");
+        }
+        if (input == null) return false;
+
+        Bundle args = new Bundle();
+        args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, message);
+        return input.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args);
+    }
+
+    /**
+     * 发消息专用：点击发送按钮（优先 bql，再输入栏 bqn 内查找，最后跨窗口 + 冒泡点击）
+     */
+    private boolean clickSendButton(AccessibilityNodeInfo root) {
+        if (root != null) {
+            if (clickByViewId(root, ID_SEND_BTN)) return true;
+            if (clickSendInsideSendBar(root)) return true;
+            if (clickSendByTextPreferButton(root)) return true;
+        }
+        if (clickSendButtonInAllWindows()) return true;
+        return false;
+    }
+
+    /** 在 com.tencent.mm:id/bqn 输入栏内找发送 Button（bql 或文案「发送」） */
+    private boolean clickSendInsideSendBar(AccessibilityNodeInfo root) {
+        List<AccessibilityNodeInfo> bars = root.findAccessibilityNodeInfosByViewId(ID_SEND_BAR);
+        if (bars == null || bars.isEmpty()) return false;
+        for (AccessibilityNodeInfo bar : bars) {
+            List<AccessibilityNodeInfo> byId = bar.findAccessibilityNodeInfosByViewId(ID_SEND_BTN);
+            if (byId != null) {
+                for (AccessibilityNodeInfo n : byId) {
+                    if (performClick(n) || forceBubbleClick(n)) return true;
+                }
+            }
+            if (clickSendByTextPreferButton(bar)) return true;
+        }
+        return false;
+    }
+
+    /** 只点 class 含 Button 且 text 为「发送」的节点，避免点到其它含「发送」的文案 */
+    private boolean clickSendByTextPreferButton(AccessibilityNodeInfo root) {
+        List<AccessibilityNodeInfo> nodes = findNodesByAnyText(root, "发送");
+        for (AccessibilityNodeInfo node : nodes) {
+            CharSequence cls = node.getClassName();
+            if (cls == null || !cls.toString().contains("Button")) continue;
+            if (performClick(node) || forceBubbleClick(node)) return true;
+        }
+        for (AccessibilityNodeInfo node : nodes) {
+            if (performClick(node) || forceBubbleClick(node)) return true;
+        }
+        return false;
+    }
+
+    /** 聊天页发送条有时不在 active window，遍历所有窗口 */
+    private boolean clickSendButtonInAllWindows() {
+        List<AccessibilityWindowInfo> windows = getWindows();
+        if (windows == null) return false;
+        for (AccessibilityWindowInfo window : windows) {
+            AccessibilityNodeInfo windowRoot = window.getRoot();
+            if (windowRoot == null) continue;
+            if (clickByViewId(windowRoot, ID_SEND_BTN)) return true;
+            if (clickSendInsideSendBar(windowRoot)) return true;
+            if (clickSendByTextPreferButton(windowRoot)) return true;
+        }
+        return false;
+    }
+
+    /** 与视频面板类似：从节点向上每层尝试 ACTION_CLICK；仅当某次 performAction 成功时视为已点 */
+    private boolean forceBubbleClick(AccessibilityNodeInfo node) {
+        if (node == null) return false;
+        boolean ok = false;
+        AccessibilityNodeInfo cur = node;
+        while (cur != null) {
+            if (cur.performAction(AccessibilityNodeInfo.ACTION_CLICK)) ok = true;
+            if (cur.isClickable() && cur.performAction(AccessibilityNodeInfo.ACTION_CLICK)) ok = true;
+            cur = cur.getParent();
+        }
+        return ok;
     }
 
     // ---------------------------------

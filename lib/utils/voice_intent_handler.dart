@@ -61,8 +61,11 @@ class VoiceIntentHandler {
     // 💡 3. 新增微信自动化动作
     'WECHAT_SCAN': _openWeChatScan,
     'WECHAT_VOICE_CALL': _startWeChatVoiceCall,
+    'WECHAT_SEND_MESSAGE': _sendWeChatMessage,
     'OPEN_APP': _openAppByName,
     'SEARCH_IN_APP': _searchInApp, // 💡 新增应用内搜索支持
+    // 💡 新增：高德地图导航
+    'AMAP_NAVIGATE': _navigateWithAmap,
   };
 
   static Future<void> handle({String? action, Map<String, dynamic>? params}) async {
@@ -100,22 +103,43 @@ class VoiceIntentHandler {
     await _launchAnyApp(['weixin://']);
   }
 
-  // 💡 4. 实现微信扫一扫 (通过深链接)
+  // 微信扫一扫：原生写入任务并拉起微信，由 WeChatAutoService 无障碍点击首页「更多功能」→「扫一扫」
   static Future<void> _openWeChatScan(Map<String, dynamic> params) async {
+    try {
+      final ok = await _accessibilityChannel.invokeMethod<bool>('startWeChatScan');
+      if (ok == true) return;
+    } catch (e) {
+      print('微信扫一扫无障碍触发失败: $e');
+    }
     await _launchAnyApp(['weixin://dl/scan']);
   }
 
   // 💡 5. 核心：实现拨打微信语音电话
   static Future<void> _startWeChatVoiceCall(Map<String, dynamic> params) async {
-    // 提取联系人姓名 (如：妈妈、儿子)
     final contact = (params['contact'] ?? params['contactName'] ?? '').toString().trim();
     if (contact.isEmpty) return;
-
     try {
-      // 通过无障碍通道调用 Android 原生代码，原生端会负责缓存联系人并唤起微信
       await _accessibilityChannel.invokeMethod('startWeChatCall', {'contact': contact});
     } catch (e) {
       print("调用微信语音自动化失败: $e");
+    }
+  }
+
+  static Future<void> _sendWeChatMessage(Map<String, dynamic> params) async {
+    final contact = (params['contact'] ?? params['contactName'] ?? '').toString().trim();
+    final message = (params['message'] ?? '').toString().trim();
+    if (contact.isEmpty || message.isEmpty) {
+      print('❌ WECHAT_SEND_MESSAGE 缺少参数: contact=$contact, message=$message');
+      return;
+    }
+    print('💬 WECHAT_SEND_MESSAGE 触发: 给 $contact 发 "$message"');
+    try {
+      await _accessibilityChannel.invokeMethod('startWeChatSendMessage', {
+        'contact': contact,
+        'message': message,
+      });
+    } catch (e) {
+      print('微信发消息自动化失败: $e');
     }
   }
 
@@ -142,6 +166,9 @@ class VoiceIntentHandler {
       '拼多多': ['pinduoduo://'],
       '淘宝': ['taobao://'],
       '京东': ['openapp.jdmoble://'],
+      '高德地图': ['androidamap://', 'amap://'],
+      '高德': ['androidamap://', 'amap://'],
+      '高德导航': ['androidamap://', 'amap://'],
       '快手': ['kwai://'],
       '小红书': ['snsdk://'],
     };
@@ -177,6 +204,68 @@ class VoiceIntentHandler {
     }
     // 兜底：若不支持深链接搜索，则仅打开 App
     await _openAppByName({'appName': params['appName'] ?? params['app_name']});
+  }
+
+  // 💡 新增：高德地图导航
+  // params 包含：destination (必填，目的地名称或地址)、latitude/longitude (可选经纬度)
+  static Future<void> _navigateWithAmap(Map<String, dynamic> params) async {
+    final destination = (params['destination'] ?? params['addr'] ?? params['address'] ?? '').toString().trim();
+    if (destination.isEmpty) {
+      print('❌ AMAP_NAVIGATE 缺少目的地参数');
+      return;
+    }
+
+    print('🗺️ 高德地图导航: $destination');
+
+    // 尝试使用高德地图导航 URI Scheme
+    // 高德地图支持直接通过 scheme 打开并导航
+    // amapuri://route/plan/?dlat=&dlon=&dname=&dev=0&t=0
+    final encodedName = Uri.encodeComponent(destination);
+
+    // 方案1：直接导航（高德地图客户端）
+    // 如果后端返回了经纬度优先用经纬度
+    final lat = params['latitude'] ?? params['lat'];
+    final lon = params['longitude'] ?? params['lon'];
+
+    List<String> navUrls;
+
+    if (lat != null && lon != null) {
+      // 有经纬度：直接导航到坐标
+      navUrls = [
+        'amapuri://route/plan/?dlat=$lat&dlon=$lon&dname=$encodedName&dev=0&t=0',
+        'androidamap://navi?sourceApplication=appname&poiname=$encodedName&lat=$lat&lon=$lon&dev=0',
+      ];
+    } else {
+      // 无经纬度：用名称搜索导航（打开高德地图并搜索该地点）
+      navUrls = [
+        // 高德地图搜索 URL Scheme
+        'androidamap://openNavi?sourceApplication=appname&keyword=$encodedName',
+        'amapuri://keywordNavi?keyword=$encodedName',
+        // 兜底：打开高德地图（让用户手动选择）
+        'amap://openFeature?featureName=search&query=$encodedName',
+      ];
+    }
+
+    bool launched = await _launchAnyApp(navUrls);
+
+    if (!launched) {
+      // 最终兜底：尝试直接打开高德地图 App
+      print('🔄 高德地图导航链接失败，尝试直接打开高德地图');
+      launched = await _launchAnyApp([
+        'amap://',
+        'androidamap://',
+      ]);
+
+      if (!launched) {
+        print('❌ 高德地图未安装或无法打开');
+        // 兜底：打开网页版高德
+        await _launchAnyApp([
+          'https://restapi.amap.com/v3/place/text?keywords=$encodedName&output=json',
+        ]);
+      }
+    } else {
+      print('✅ 高德地图导航已启动: $destination');
+    }
   }
 
   static Future<bool> _launchAnyApp(List<String> urls) async {
