@@ -89,8 +89,8 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
   }
 
   Map<String, double> myLocation = {
-    "lat": 23.112724,
-    "lng": 113.259987,
+    "lat": 23.27491548663772,
+    "lng": 112.68073532165043, //BD09(百度坐标系)，本校
   };
 
   Timer? _realtimeTimer;
