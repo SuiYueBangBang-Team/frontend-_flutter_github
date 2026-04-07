@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:flutter_baidu_mapapi_base/flutter_baidu_mapapi_base.dart';
 // 工具类
 import 'package:phone_java/utils/api_client.dart';
 import 'app_fonts.dart';
@@ -29,6 +30,14 @@ String initialRoute = '/';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 💡 必须在调用任何接口前同意隐私政策
+  BMFMapSDK.setAgreePrivacy(true);
+
+  // 💡 可以在 Dart 侧再次初始化 SDK（特别是兼容 iOS 平台），Android 平台也会以这里为主兜底
+  BMFMapSDK.setApiKeyAndCoordType(
+      'gOk4AIifU6VZZTRrwxoMlWOXyjt1DCPX', BMF_COORD_TYPE.BD09LL);
+
 
   // 1. 读取本地缓存
   final prefs = await SharedPreferences.getInstance();

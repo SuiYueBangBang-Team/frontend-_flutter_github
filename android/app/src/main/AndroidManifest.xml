@@ -9,6 +9,12 @@
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+
     <uses-feature
         android:name="android.hardware.telephony"
         android:required="false" />
@@ -44,8 +50,12 @@
 
     <application
         android:label="phone_java"
-        android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:name=".MyApplication" android:icon="@mipmap/ic_launcher">
+
+        <meta-data
+            android:name="com.baidu.lbsapi.API_KEY"
+            android:value="gOk4AIifU6VZZTRrwxoMlWOXyjt1DCPX" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

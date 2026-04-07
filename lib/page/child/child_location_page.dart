@@ -3,6 +3,10 @@ import 'dart:async';
 import 'dart:math';
 import '../../utils/api_client.dart'; // 💡 引入真实请求客户端
 
+// 💡 引入基础地图库与工具
+import 'package:flutter_baidu_mapapi_base/flutter_baidu_mapapi_base.dart'; //
+import 'package:flutter_baidu_mapapi_map/flutter_baidu_mapapi_map.dart'; //
+
 class ChildLocationPage extends StatefulWidget {
   const ChildLocationPage({super.key});
 
@@ -15,6 +19,9 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
   bool isLoading = true;
   bool _isTrackingLocked = false;
   String? selectedDeviceId;
+
+  // 💡 新增：百度地图控制器
+  BMFMapController? myMapController;
 
   Map<String, double> myLocation = {
     "lat": 30.5450,
@@ -92,7 +99,47 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
           }
         }
       });
+// 💡 坐标跳动后，刷新百度地图覆盖物
+      _updateMapOverlays();
+
+      // 💡 跟踪逻辑：若开启了导航居中且存在选中设备，则转移地图视角
+      if (_isTrackingLocked && selectedDeviceId != null) {
+        var targetDevice = boundDevices.firstWhere((d) => d['id'] == selectedDeviceId, orElse: () => {});
+        if (targetDevice.isNotEmpty && targetDevice['isOnline'] == true) {
+          myMapController?.setCenterCoordinate(
+              BMFCoordinate(targetDevice['lat'], targetDevice['lng']), true);
+        }
+      }
+
     });
+  }
+
+// 💡 核心新增：绘制真实地图覆盖物
+  void _updateMapOverlays() {
+    if (myMapController == null) return;
+    myMapController?.cleanAllMarkers(); // 清除旧图标
+
+    // 1. 绘制“我”的位置
+    BMFMarker myMarker = BMFMarker(
+      position: BMFCoordinate(myLocation['lat']!, myLocation['lng']!),
+      title: "我的位置",
+      // ⚠️ 必须提供本地资源图作 Marker
+      icon: "assets/icons/my_location.png",
+    );
+    myMapController?.addMarker(myMarker);
+
+    // 2. 绘制长辈设备的位置
+    for (var device in boundDevices) {
+      if (device['isOnline'] == true) {
+        bool isSelected = selectedDeviceId == device['id'];
+        BMFMarker deviceMarker = BMFMarker(
+          position: BMFCoordinate(device['lat']!, device['lng']!),
+          title: device['name'],
+          icon: isSelected ? "assets/icons/device_selected.png" : "assets/icons/device_normal.png",
+        );
+        myMapController?.addMarker(deviceMarker);
+      }
+    }
   }
 
   // 💡 真实接口：绑定设备弹窗
@@ -396,89 +443,26 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
     );
   }
 
-  // 🗺️ 地图图层 (仅供展示)
+// 🗺️ 替换为真实的地图图层 Widget
   Widget _buildMapLayer() {
+    // 💡 构造包含了中心点坐标、缩放级别以及预留边界等状态参数的地图选项
+    BMFMapOptions mapOptions = BMFMapOptions(
+        center: BMFCoordinate(myLocation['lat']!, myLocation['lng']!),
+        zoomLevel: 15,
+        mapPadding: BMFEdgeInsets(left: 0, top: 0, right: 0, bottom: 0)); //
+
     return Container(
-      width: double.infinity, height: double.infinity,
+      width: double.infinity,
+      height: double.infinity,
       color: const Color(0xFFF1F0EA),
-      child: Stack(
-        children: [
-          CustomPaint(size: Size.infinite, painter: _FakeMapPainter()),
-
-          AnimatedPositioned(
-            duration: const Duration(seconds: 2),
-            curve: Curves.linear,
-            top: 400 - (myLocation['lat']! - 30.54) * 10000,
-            left: 150 + (myLocation['lng']! - 114.30) * 10000,
-            child: Column(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(color: Colors.blueAccent, borderRadius: BorderRadius.circular(12), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 5)]),
-                  child: const Text("我的位置", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
-                ),
-                const SizedBox(height: 5),
-                Container(
-                  width: 24, height: 24,
-                  decoration: BoxDecoration(color: Colors.blue, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 3), boxShadow: const [BoxShadow(color: Colors.blueAccent, blurRadius: 10)]),
-                ),
-              ],
-            ),
-          ),
-
-          ...boundDevices.where((d) => d['isOnline']).map((device) {
-            bool isSelected = selectedDeviceId == device['id'];
-            double lat = (device['lat'] ?? 0.0).toDouble();
-            double lng = (device['lng'] ?? 0.0).toDouble();
-
-            double top = 400 - (lat - 30.54) * 10000;
-            double left = 150 + (lng - 114.30) * 10000;
-
-            return AnimatedPositioned(
-              duration: const Duration(seconds: 2),
-              curve: Curves.linear,
-              top: top, left: left,
-              child: Column(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: isSelected ? Colors.green : Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 5)],
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CircleAvatar(radius: 10, backgroundColor: isSelected ? Colors.white : Colors.green, child: Icon(Icons.person, size: 14, color: isSelected ? Colors.green : Colors.white)),
-                        const SizedBox(width: 6),
-                        Text(device['name'], style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: isSelected ? Colors.white : Colors.black87)),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Icon(Icons.location_on, color: isSelected ? Colors.green : Colors.grey, size: isSelected ? 48 : 40),
-                ],
-              ),
-            );
-          }).toList(),
-        ],
+      // 💡 BMFMapWidget 替代旧版 FakePainter
+      child: BMFMapWidget(
+        onBMFMapCreated: (controller) {
+          myMapController = controller;
+          _updateMapOverlays(); // 地图初始化完毕，立刻执行一次标注绘制
+        },
+        mapOptions: mapOptions, //
       ),
     );
   }
-}
-
-class _FakeMapPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = Colors.white..strokeWidth = 8..style = PaintingStyle.stroke;
-    final path = Path();
-    path.moveTo(0, size.height * 0.4);
-    path.quadraticBezierTo(size.width * 0.5, size.height * 0.5, size.width, size.height * 0.3);
-    path.moveTo(size.width * 0.3, 0);
-    path.lineTo(size.width * 0.4, size.height);
-    canvas.drawPath(path, paint);
-  }
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

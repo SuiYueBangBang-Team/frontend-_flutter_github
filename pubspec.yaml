@@ -27,8 +27,12 @@ dependencies:
   shared_preferences: ^2.3.2
   audioplayers: ^6.6.0
   intl: ^0.20.2
-
-
+  # 💡 直接强制写明最新版本号
+  flutter_baidu_mapapi_base: 3.9.9+1
+  flutter_baidu_mapapi_map: 3.9.9+1
+  flutter_baidu_mapapi_search: 3.9.9+1
+  flutter_baidu_mapapi_utils: 3.9.9+1
+  flutter_bmflocation: 3.8.4
 
 
 dev_dependencies:
@@ -39,4 +43,4 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/images/
+    - assets/icons/
