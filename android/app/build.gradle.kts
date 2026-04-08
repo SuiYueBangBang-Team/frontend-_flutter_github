@@ -28,6 +28,14 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // 微信开放平台「移动应用」AppID（非小程序 AppID）。在 android/gradle.properties 中配置：wechat.app.id=wx你的应用id
+        val wechatAppId = (project.findProperty("wechat.app.id") as String?)?.trim().orEmpty()
+        buildConfigField("String", "WECHAT_APP_ID", "\"$wechatAppId\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     buildTypes {
@@ -41,4 +49,9 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // 拉起微信小程序等能力：https://developers.weixin.qq.com/doc/oplatform/Mobile_App/WeChat_Login/Development_Guide.html
+    implementation("com.tencent.mm.opensdk:wechat-sdk-android:6.8.34")
 }

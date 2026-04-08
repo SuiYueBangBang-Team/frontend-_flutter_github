@@ -66,6 +66,11 @@ class VoiceIntentHandler {
     'SEARCH_IN_APP': _searchInApp, // 💡 新增应用内搜索支持
     // 💡 新增：高德地图导航
     'AMAP_NAVIGATE': _navigateWithAmap,
+    // 💡 新增：拼多多搜索
+    'PINDUODUO_SEARCH': _openPinduoduoSearch,
+    'PINDUODU': _openPinduoduoHome,
+    // 💡 微信内指定小程序：手机充值（原生 SDK 拉起，需配置 wechat.app.id）
+    'WECHAT_PHONE_RECHARGE': _openWeChatPhoneRechargeMiniProgram,
   };
 
   static Future<void> handle({String? action, Map<String, dynamic>? params}) async {
@@ -77,14 +82,57 @@ class VoiceIntentHandler {
 
   // --- 处理函数实现 ---
 
+  /// 拉起「手机充值」微信小程序（原始 ID gh_fefb88a96b0e，与后端 WECHAT_PHONE_RECHARGE 对应）
+  static Future<void> _openWeChatPhoneRechargeMiniProgram(Map<String, dynamic> params) async {
+    final path = (params['path'] ?? '').toString().trim();
+    print('📱 WECHAT_PHONE_RECHARGE 触发，拉起微信小程序（手机充值）');
+    try {
+      final args = <String, dynamic>{};
+      if (path.isNotEmpty) args['path'] = path;
+      final ok = await _channel.invokeMethod<bool>('launchWeChatPhoneRechargeMiniProgram', args);
+      if (ok == true) {
+        print('✅ 已请求微信打开小程序');
+        return;
+      }
+    } catch (e) {
+      print('❌ 拉起微信小程序失败（请检查是否配置 android/gradle.properties 的 wechat.app.id）: $e');
+    }
+    await _launchAnyApp(['weixin://']);
+  }
+
   static Future<void> _openMeituanSearch(Map<String, dynamic> params) async {
     final keyword = (params['keyword'] ?? '').toString().trim();
-    if (keyword.isEmpty) return;
+    if (keyword.isEmpty) {
+      print('❌ MEITUAN_SEARCH 缺少关键词参数');
+      return;
+    }
+
+    print('🍜 MEITUAN_SEARCH 触发，关键词: $keyword');
+
+    // 方案1：优先通过原生无障碍服务（自动点击搜索框、输入关键词、点搜索）
+    try {
+      final result = await _accessibilityChannel.invokeMethod<bool>('startMeituanSearch', {
+        'keyword': keyword,
+      });
+      if (result == true) {
+        print('✅ 美团搜索已通过无障碍服务启动: $keyword');
+        return;
+      }
+    } catch (e) {
+      print('⚠️ 美团无障碍通道调用失败，回退到 Deep Link: $e');
+    }
+
+    // 方案2：Deep Link 兜底
     final encoded = Uri.encodeComponent(keyword);
-    await _launchAnyApp([
+    bool launched = await _launchAnyApp([
       'imeituan://www.meituan.com/search/result?keyword=$encoded',
       'imeituan://www.meituan.com/',
     ]);
+    if (!launched) {
+      print('❌ 美团未安装或无法打开');
+    } else {
+      print('✅ 美团搜索已通过 Deep Link 启动: $keyword');
+    }
   }
 
   static Future<void> _openMeituanHome(Map<String, dynamic> params) async {
@@ -208,6 +256,7 @@ class VoiceIntentHandler {
 
   // 💡 新增：高德地图导航
   // params 包含：destination (必填，目的地名称或地址)、latitude/longitude (可选经纬度)
+  // 策略：优先走原生无障碍通道（自动在高德地图搜索目的地），Deep Link 作为兜底
   static Future<void> _navigateWithAmap(Map<String, dynamic> params) async {
     final destination = (params['destination'] ?? params['addr'] ?? params['address'] ?? '').toString().trim();
     if (destination.isEmpty) {
@@ -217,31 +266,39 @@ class VoiceIntentHandler {
 
     print('🗺️ 高德地图导航: $destination');
 
-    // 尝试使用高德地图导航 URI Scheme
-    // 高德地图支持直接通过 scheme 打开并导航
-    // amapuri://route/plan/?dlat=&dlon=&dname=&dev=0&t=0
-    final encodedName = Uri.encodeComponent(destination);
+    // 方案1：优先通过原生无障碍服务启动高德地图并自动输入目的地
+    try {
+      final lat = params['latitude'] ?? params['lat'];
+      final lon = params['longitude'] ?? params['lon'];
+      final result = await _accessibilityChannel.invokeMethod<bool>('startAmapNavi', {
+        'destination': destination,
+        'latitude': lat,
+        'longitude': lon,
+      });
+      if (result == true) {
+        print('✅ 高德地图导航已通过无障碍服务启动: $destination');
+        return;
+      }
+    } catch (e) {
+      print('⚠️ 高德地图无障碍通道调用失败，回退到 Deep Link: $e');
+    }
 
-    // 方案1：直接导航（高德地图客户端）
-    // 如果后端返回了经纬度优先用经纬度
+    // 方案2：Deep Link 兜底（高德地图客户端 URI Scheme）
+    final encodedName = Uri.encodeComponent(destination);
     final lat = params['latitude'] ?? params['lat'];
     final lon = params['longitude'] ?? params['lon'];
 
     List<String> navUrls;
 
     if (lat != null && lon != null) {
-      // 有经纬度：直接导航到坐标
       navUrls = [
         'amapuri://route/plan/?dlat=$lat&dlon=$lon&dname=$encodedName&dev=0&t=0',
         'androidamap://navi?sourceApplication=appname&poiname=$encodedName&lat=$lat&lon=$lon&dev=0',
       ];
     } else {
-      // 无经纬度：用名称搜索导航（打开高德地图并搜索该地点）
       navUrls = [
-        // 高德地图搜索 URL Scheme
         'androidamap://openNavi?sourceApplication=appname&keyword=$encodedName',
         'amapuri://keywordNavi?keyword=$encodedName',
-        // 兜底：打开高德地图（让用户手动选择）
         'amap://openFeature?featureName=search&query=$encodedName',
       ];
     }
@@ -249,23 +306,55 @@ class VoiceIntentHandler {
     bool launched = await _launchAnyApp(navUrls);
 
     if (!launched) {
-      // 最终兜底：尝试直接打开高德地图 App
       print('🔄 高德地图导航链接失败，尝试直接打开高德地图');
-      launched = await _launchAnyApp([
-        'amap://',
-        'androidamap://',
-      ]);
+      launched = await _launchAnyApp(['amap://', 'androidamap://']);
 
       if (!launched) {
         print('❌ 高德地图未安装或无法打开');
-        // 兜底：打开网页版高德
-        await _launchAnyApp([
-          'https://restapi.amap.com/v3/place/text?keywords=$encodedName&output=json',
-        ]);
       }
     } else {
-      print('✅ 高德地图导航已启动: $destination');
+      print('✅ 高德地图导航已通过 Deep Link 启动: $destination');
     }
+  }
+
+  // 拼多多搜索：优先通过原生无障碍通道，Deep Link 为兜底
+  static Future<void> _openPinduoduoSearch(Map<String, dynamic> params) async {
+    final keyword = (params['keyword'] ?? '').toString().trim();
+    if (keyword.isEmpty) {
+      print('❌ PINDUODUO_SEARCH 缺少关键词参数');
+      return;
+    }
+
+    print('🛒 PINDUODUO_SEARCH 触发，关键词: $keyword');
+
+    try {
+      final result = await _accessibilityChannel.invokeMethod<bool>('startPinduoduoSearch', {
+        'keyword': keyword,
+      });
+      if (result == true) {
+        print('✅ 拼多多搜索已通过无障碍服务启动: $keyword');
+        return;
+      }
+    } catch (e) {
+      print('⚠️ 拼多多无障碍通道调用失败，回退到 Deep Link: $e');
+    }
+
+    final encoded = Uri.encodeComponent(keyword);
+    bool launched = await _launchAnyApp([
+      'pinduoduo://com.xunmeng.pinduoduo/search?keyword=$encoded',
+      'pinduoduo://',
+    ]);
+    if (!launched) {
+      print('❌ 拼多多未安装或无法打开');
+    } else {
+      print('✅ 拼多多搜索已通过 Deep Link 启动: $keyword');
+    }
+  }
+
+  // 打开拼多多主页（不带搜索词）
+  static Future<void> _openPinduoduoHome(Map<String, dynamic> params) async {
+    print('🛒 PINDUODU 触发，打开拼多多主页');
+    await _launchAnyApp(['pinduoduo://']);
   }
 
   static Future<bool> _launchAnyApp(List<String> urls) async {
