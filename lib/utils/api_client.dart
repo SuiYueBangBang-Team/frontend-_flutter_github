@@ -8,15 +8,15 @@ class ApiClient {
   static final ApiClient _instance = ApiClient._internal();
   late Dio _dio;
 
-  // 💡 1. 新增：全局保存当前登录的 userId
+  // 💡 1. 新增：全局保存当前登录的 userId 或 Token
   static String? globalToken;
 
   factory ApiClient() => _instance;
 
   ApiClient._internal() {
     BaseOptions options = BaseOptions(
-      // baseUrl: "http://10.0.2.2:9000", // 模拟测试(模拟机)
-      baseUrl: "http://127.0.0.1:9000",   // 无线测试(真机)
+      baseUrl: "http://10.0.2.2:9000", // 模拟测试(模拟机)
+      // baseUrl: "http://127.0.0.1:9000",   // 无线测试(真机)
 
       connectTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 60),
@@ -27,22 +27,38 @@ class ApiClient {
 
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) {
-        // 💡 2. 新增：如果用户已登录，自动把 userId 塞入所有的请求头中
-        if (globalToken != null && globalToken!.isNotEmpty) {
-          options.headers["Authorization"] = globalToken;
+        // 💡 2. 核心修复：白名单接口（免登录）绝对不能带上旧的/无效的 Token！
+        bool isAuthApi = options.path.contains('/api/auth/login') ||
+            options.path.contains('/api/auth/face-login') ||
+            options.path.contains('/api/auth/send-sms');
+
+        if (isAuthApi) {
+          // 确保请求头中干净，没有 Authorization
+          options.headers.remove('Authorization');
+        } else {
+          // 💡 其他正常的业务接口，如果用户已登录，自动把 Token 塞入所有的请求头中
+          if (globalToken != null && globalToken!.isNotEmpty) {
+            options.headers["Authorization"] = globalToken;
+          }
         }
 
         print("➡️ 发起请求: ${options.method} ${options.path}");
-        print("📦 请求参数: ${options.data ?? options.queryParameters}");
-        print("🎫 请求头: ${options.headers}"); // 打印一下头信息方便调试
+        // 为了避免 formData 打印报错，简单加个判断
+        if (options.data is FormData) {
+          print("📦 请求参数: [FormData 文件/多部分数据上传]");
+        } else {
+          print("📦 请求参数: ${options.data ?? options.queryParameters}");
+        }
+        print("🎫 请求头 Authorization: ${options.headers['Authorization'] ?? '无'}");
+
         return handler.next(options);
       },
       onResponse: (response, handler) {
-        print("✅ 收到响应: ${response.data}");
+        print("✅ 收到响应 [${response.requestOptions.path}]: ${response.data}");
         return handler.next(response);
       },
       onError: (DioException e, handler) async {
-        print("❌ 请求异常: ${e.message}, 状态码: ${e.response?.statusCode}");
+        print("❌ 请求异常 [${e.requestOptions.path}]: ${e.message}, 状态码: ${e.response?.statusCode}");
 
         // 当后端返回 401 (未登录或 Token 过期/无效) 时
         if (e.response?.statusCode == 401) {
@@ -75,9 +91,10 @@ class ApiClient {
     }
   }
 
-  Future<dynamic> post(String path, {dynamic data}) async {
+  Future<dynamic> post(String path, {dynamic data, Options? options}) async {
     try {
-      var response = await _dio.post(path, data: data);
+      // 支持传入自定义 options（比如强制覆盖 headers）
+      var response = await _dio.post(path, data: data, options: options);
       return _handleResponse(response);
     } catch (e) {
       rethrow;

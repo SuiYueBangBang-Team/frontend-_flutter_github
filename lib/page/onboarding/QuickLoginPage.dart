@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-
+import 'package:flutter/material.dart';
+import 'package:phone_java/page/onboarding/FaceLoginPage.dart'; // 💡 引入刷脸页面
 class QuickLoginPage extends StatefulWidget {
   const QuickLoginPage({super.key});
 
@@ -100,6 +101,35 @@ class _QuickLoginPageState extends State<QuickLoginPage> {
             ),
 
             const SizedBox(height: 20),
+
+            /// 💡 新增：如果是长辈端，优先显示刷脸登录按钮
+            if (!isChild) ...[
+              SizedBox(
+                width: double.infinity,
+                height: 65,
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.face_retouching_natural_rounded, size: 30),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blueAccent,
+                    foregroundColor: Colors.white,
+                    elevation: 5,
+                    shadowColor: Colors.blueAccent.withOpacity(0.5),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                  ),
+                  onPressed: () {
+                    // 跳转到独立的人脸识别页面
+                    Navigator.push(context, MaterialPageRoute(builder: (context) => const FaceLoginPage()));
+                  },
+                  label: const Text(
+                    "推荐：刷脸极速登录",
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
 
             /// 一键登录按钮
             SizedBox(

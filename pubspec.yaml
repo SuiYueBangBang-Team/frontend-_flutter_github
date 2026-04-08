@@ -9,6 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  image_picker: ^1.0.4  # 用于简易唤起前置相机拍照
 
   cupertino_icons: ^1.0.8
   dio: ^5.9.2
@@ -17,7 +18,6 @@ dependencies:
   flutter_phone_direct_caller: ^2.2.1
   flutter_tts: ^4.2.5
   fluwx: ^5.7.5
-  image_picker: ^1.2.1
   path_provider: ^2.1.5
   record: ^6.2.0
   speech_to_text: ^7.3.0

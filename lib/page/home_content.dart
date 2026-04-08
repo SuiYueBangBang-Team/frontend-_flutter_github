@@ -2,13 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:phone_java/app_fonts.dart';
 import 'dart:math' as math;
 import 'dart:async';
+import 'dart:io';
+import 'dart:convert';
 import 'package:phone_java/utils/api_client.dart';
 import 'package:phone_java/utils/voice_intent_handler.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:dio/dio.dart';
 import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:audioplayers/audioplayers.dart'; // 💡 新增：音频播放插件
+import 'package:audioplayers/audioplayers.dart';
 
 class HomeContent extends StatefulWidget {
   const HomeContent({super.key});
@@ -20,19 +22,22 @@ class HomeContent extends StatefulWidget {
 class _HomeContentState extends State<HomeContent> with SingleTickerProviderStateMixin {
   bool _isRecording = false;
   bool _isProcessing = false;
+  bool _isStartingRecord = false;
+  bool _wantsToStop = false;
+
+  int _currentStreamId = 0;
+
   late AnimationController _waveController;
   final ScrollController _scrollController = ScrollController();
   final AudioRecorder _recorder = AudioRecorder();
-
-  // 💡 新增：音频播放器实例
   final AudioPlayer _audioPlayer = AudioPlayer();
 
-  // 💡 注意：这里必须和你的 ApiClient 中的 baseUrl 保持一致！
-  // 如果你在 ApiClient 中用的是 10.0.2.2，这里也要换成 10.0.2.2
-  // final String _baseUrl = "http://10.0.2.2:9000";
-  final String _baseUrl = "http://127.0.0.1:9000";
+  final List<String> _pendingImages = [];
 
-  final List<Map<String, String>> _messages = [
+  final String _baseUrl = "http://10.0.2.2:9000";
+  // final String _baseUrl = "http://127.0.0.1:9000";
+
+  final List<Map<String, dynamic>> _messages = [
     {"role": "ai", "content": "您好！我是帮帮，有什么可以帮您？"},
   ];
 
@@ -45,65 +50,163 @@ class _HomeContentState extends State<HomeContent> with SingleTickerProviderStat
   }
 
   void _scrollToBottom() {
-    Future.delayed(const Duration(milliseconds: 200), () {
+    Future.delayed(const Duration(milliseconds: 100), () {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 400),
+          duration: const Duration(milliseconds: 300),
           curve: Curves.easeOut,
         );
       }
     });
   }
 
-  // 💡 修改：增加 audioUrl 参数
-  void _startAiStreamResponse(String fullResponse, {String audioUrl = ""}) async {
-    // 💡 如果后端返回了音频链接，直接开始播放
-    if (audioUrl.isNotEmpty) {
-      try {
-        String fullAudioUrl = "$_baseUrl$audioUrl";
-        await _audioPlayer.play(UrlSource(fullAudioUrl));
-      } catch (e) {
-        debugPrint("音频播放失败: $e");
-      }
-    }
+  void _interruptAI() {
+    _currentStreamId++;
+    _audioPlayer.stop();
 
-    String currentDisplay = "";
-    setState(() => _messages.add({"role": "ai", "content": ""}));
-
-    for (int i = 0; i < fullResponse.length; i++) {
-      await Future.delayed(const Duration(milliseconds: 50));
-      currentDisplay += fullResponse[i];
-      _aiStreamController.add(currentDisplay);
-      _messages.last["content"] = currentDisplay;
+    if (_isProcessing) {
+      setState(() {
+        _isProcessing = false;
+        if (_messages.isNotEmpty && _messages.last['role'] == 'ai') {
+          String content = _messages.last['content'];
+          if (content.isEmpty) {
+            _messages.last['content'] = "[已打断思考]";
+            _aiStreamController.add("[已打断思考]");
+          } else if (!content.endsWith("[已打断]")) {
+            _messages.last['content'] = "$content [已打断]";
+            _aiStreamController.add("$content [已打断]");
+          }
+        }
+      });
       _scrollToBottom();
     }
   }
 
+  Future<void> _handleStreamResponse(dynamic responseBody, {List<String>? imagePaths}) async {
+    _currentStreamId++;
+    final int myStreamId = _currentStreamId;
+
+    setState(() {
+      _isProcessing = true;
+      _messages.add({"role": "ai", "content": ""});
+    });
+    _scrollToBottom();
+
+    String currentDisplay = "";
+    String buffer = "";
+    bool hasReceivedData = false;
+
+    try {
+      // 💡 核心修复：解决 utf8.decoder 报错问题！
+      // 将 Dio 默认的 Stream<Uint8List> 强转为 Stream<List<int>>
+      final Stream<List<int>> byteStream = (responseBody.stream as Stream).cast<List<int>>();
+
+      await for (final String data in byteStream.transform(utf8.decoder)) {
+        if (myStreamId != _currentStreamId) break;
+
+        buffer += data;
+        List<String> lines = buffer.split('\n');
+        buffer = lines.removeLast();
+
+        for (String line in lines) {
+          if (myStreamId != _currentStreamId) break;
+
+          if (line.startsWith('data:')) {
+            hasReceivedData = true;
+            String jsonStr = line.substring(5).trim();
+            if (jsonStr.isEmpty) continue;
+
+            try {
+              var jsonData = jsonDecode(jsonStr);
+
+              if (jsonData['type'] == 'recognized') {
+                setState(() {
+                  int lastUserIdx = _messages.lastIndexWhere((m) => m['role'] == 'user');
+                  if (lastUserIdx != -1) {
+                    _messages[lastUserIdx]['content'] = jsonData['content'];
+                  }
+                });
+              } else if (jsonData['type'] == 'text') {
+                currentDisplay += jsonData['content'];
+                if (myStreamId == _currentStreamId) {
+                  _aiStreamController.add(currentDisplay);
+                  setState(() => _messages.last["content"] = currentDisplay);
+                  _scrollToBottom();
+                }
+              } else if (jsonData['type'] == 'meta') {
+                String audioUrl = jsonData['audioUrl'] ?? "";
+                String action = jsonData['action'] ?? "";
+                var params = jsonData['params'] ?? {};
+
+                if (audioUrl.isNotEmpty && myStreamId == _currentStreamId) {
+                  await _audioPlayer.play(UrlSource("$_baseUrl$audioUrl"));
+                }
+                if (myStreamId == _currentStreamId) {
+                  VoiceIntentHandler.handle(action: action, params: params);
+                }
+              }
+            } catch (e) {
+              debugPrint("SSE 流解析片段异常: $e");
+            }
+          }
+        }
+      }
+
+      // 如果流结束了却没收到任何合法数据，说明大概率是普通 JSON 报错返回了
+      if (!hasReceivedData && buffer.trim().startsWith('{')) {
+        try {
+          var errorJson = jsonDecode(buffer);
+          throw Exception(errorJson['message'] ?? "服务器异常");
+        } catch(_) {}
+      }
+
+    } catch (e) {
+      debugPrint("网络流读取断开: $e");
+      rethrow;
+    } finally {
+      if (mounted && myStreamId == _currentStreamId) {
+        setState(() => _isProcessing = false);
+      }
+    }
+  }
+
   Future<void> _startRecording() async {
+    _interruptAI();
+    if (_isRecording || _isStartingRecord) return;
+
+    _isStartingRecord = true;
+    _wantsToStop = false;
+
     final hasPermission = await _recorder.hasPermission();
     if (!hasPermission) {
-      _startAiStreamResponse("没有录音权限，请在系统设置中开启麦克风权限。");
+      _isStartingRecord = false;
       return;
     }
 
     final directory = await getTemporaryDirectory();
     final filePath = '${directory.path}/record.wav';
 
-    await _recorder.start(
-      const RecordConfig(
-        encoder: AudioEncoder.wav,
-        bitRate: 128000,
-        sampleRate: 8000,
-      ),
-      path: filePath,
-    );
+    await _recorder.start(const RecordConfig(encoder: AudioEncoder.wav, sampleRate: 8000), path: filePath);
+
+    _isStartingRecord = false;
+
+    if (_wantsToStop) {
+      await _recorder.stop();
+      return;
+    }
 
     setState(() => _isRecording = true);
     _waveController.repeat();
   }
 
   Future<void> _stopRecordingAndUpload() async {
+    if (_isStartingRecord) {
+      _wantsToStop = true;
+      return;
+    }
+    if (!_isRecording) return;
+
     setState(() {
       _isRecording = false;
       _isProcessing = true;
@@ -111,82 +214,121 @@ class _HomeContentState extends State<HomeContent> with SingleTickerProviderStat
     _waveController.stop();
 
     final path = await _recorder.stop();
-    if (path == null || path.isEmpty) {
+    if (path == null) {
       setState(() => _isProcessing = false);
-      _startAiStreamResponse("录音失败，请重试。");
       return;
     }
 
-    try {
-      final formData = FormData.fromMap({
-        "file": await MultipartFile.fromFile(path, filename: "record.wav"),
-      });
-      final response = await ApiClient().post('/api/chat/parse-audio', data: formData); // 💡 注意这里最好和后端接口名对齐
+    List<String> imagesToSend = List.from(_pendingImages);
+    setState(() => _pendingImages.clear());
 
-      final recognizedText = response['recognizedText'] ?? "";
-      final voiceFeedback = response['voiceFeedback'] ?? response['reply'] ?? response['message'] ?? "";
-      final audioUrl = response['audioUrl'] ?? ""; // 💡 提取音频链接
-      final action = response['action']?.toString();
-      final params = response['params'] is Map ? Map<String, dynamic>.from(response['params']) : <String, dynamic>{};
-
-      if (recognizedText.toString().isNotEmpty) {
-        setState(() {
-          _messages.add({"role": "user", "content": recognizedText.toString()});
-        });
-      }
-
-      // 💡 传入 audioUrl
-      _startAiStreamResponse(voiceFeedback.toString().isNotEmpty ? voiceFeedback.toString() : "已收到语音指令", audioUrl: audioUrl);
-      await VoiceIntentHandler.handle(action: action, params: params);
-    } catch (e) {
-      _startAiStreamResponse("语音识别失败，请稍后再试。($e)");
-    } finally {
-      setState(() => _isProcessing = false);
-    }
-  }
-
-  // 💡 真实请求：发送语音/文本问 AI
-  Future<void> _sendToAi(String text) async {
     setState(() {
-      _messages.add({"role": "user", "content": text});
+      _messages.add({
+        "role": "user",
+        "content": "[正在倾听...]",
+        "imagePaths": imagesToSend
+      });
     });
     _scrollToBottom();
 
     try {
-      var response = await ApiClient().post('/api/chat/send', data: {
-        "content": text,
-        "type": "TEXT"
-      });
+      final formData = FormData();
+      formData.files.add(MapEntry("file", await MultipartFile.fromFile(path, filename: "record.wav")));
+      for (int i = 0; i < imagesToSend.length; i++) {
+        formData.files.add(MapEntry("imageFiles", await MultipartFile.fromFile(imagesToSend[i], filename: "image_$i.jpg")));
+      }
 
-      String reply = response['reply'] ?? "帮帮听不懂，能再说一遍吗？";
-      String audioUrl = response['audioUrl'] ?? ""; // 💡 提取后端返回的音频链接
-
-      // 💡 传入 audioUrl 触发播放
-      _startAiStreamResponse(reply, audioUrl: audioUrl);
+      var responseBody = await ApiClient().post(
+          '/api/chat/parse-audio',
+          data: formData,
+          options: Options(responseType: ResponseType.stream)
+      );
+      await _handleStreamResponse(responseBody);
     } catch (e) {
-      _startAiStreamResponse("网络好像出错了，请稍后再试。($e)");
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+          int lastUserIdx = _messages.lastIndexWhere((m) => m['role'] == 'user');
+          if (lastUserIdx != -1 && _messages[lastUserIdx]['content'] == "[正在倾听...]") {
+            _messages[lastUserIdx]['content'] = "[发送失败]";
+          }
+          _messages.add({"role": "ai", "content": "抱歉，由于网络波动断开了。内部错误: $e"});
+        });
+        _scrollToBottom();
+      }
+    }
+  }
+
+  Future<void> _sendImagesOnly() async {
+    _interruptAI();
+
+    if (_pendingImages.isEmpty) return;
+
+    setState(() => _isProcessing = true);
+    List<String> imagesToSend = List.from(_pendingImages);
+    setState(() => _pendingImages.clear());
+
+    setState(() {
+      _messages.add({"role": "user", "content": "[发送了图片]", "imagePaths": imagesToSend});
+    });
+    _scrollToBottom();
+
+    try {
+      final formData = FormData();
+      for (int i = 0; i < imagesToSend.length; i++) {
+        formData.files.add(MapEntry("imageFiles", await MultipartFile.fromFile(imagesToSend[i], filename: "img_$i.jpg")));
+      }
+
+      var responseBody = await ApiClient().post(
+          '/api/chat/upload-image',
+          data: formData,
+          options: Options(responseType: ResponseType.stream)
+      );
+      await _handleStreamResponse(responseBody);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+          _messages.add({"role": "ai", "content": "图片发送失败，请检查网络或后端服务器状态。内部错误: $e"});
+        });
+        _scrollToBottom();
+      }
     }
   }
 
   Future<void> _handleCameraAction() async {
-    final picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.camera);
-    if (image == null) {
-      return;
-    }
+    _interruptAI();
 
-    setState(() => _messages.add({"role": "user", "content": "[发送了一张图片]"}));
-    _scrollToBottom();
-
-    try {
-      FormData formData = FormData.fromMap({
-        "file": await MultipartFile.fromFile(image.path, filename: "upload.jpg"),
-      });
-      var response = await ApiClient().post('/api/chat/upload-image', data: formData);
-      _startAiStreamResponse(response['reply'] ?? "帮帮没有识别出内容，请再试一次。");
-    } catch (e) {
-      _startAiStreamResponse("图片上传失败了，请稍后再试。($e)");
-    }
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(padding: EdgeInsets.all(16.0), child: Text("添加图片", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+            ListTile(
+              leading: const Icon(Icons.camera_alt, color: Colors.blueAccent),
+              title: const Text("拍一张"),
+              onTap: () async {
+                Navigator.pop(context);
+                final image = await ImagePicker().pickImage(source: ImageSource.camera);
+                if (image != null) setState(() => _pendingImages.add(image.path));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library, color: Colors.green),
+              title: const Text("从相册选择 (可多选)"),
+              onTap: () async {
+                Navigator.pop(context);
+                final images = await ImagePicker().pickMultiImage();
+                if (images.isNotEmpty) setState(() => _pendingImages.addAll(images.map((e) => e.path)));
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -195,7 +337,7 @@ class _HomeContentState extends State<HomeContent> with SingleTickerProviderStat
     _scrollController.dispose();
     _aiStreamController.close();
     _recorder.dispose();
-    _audioPlayer.dispose(); // 💡 释放播放器资源
+    _audioPlayer.dispose();
     super.dispose();
   }
 
@@ -217,12 +359,14 @@ class _HomeContentState extends State<HomeContent> with SingleTickerProviderStat
 
                   if (isAi && index == _messages.length - 1 && _isRecording == false) {
                     return StreamBuilder<String>(
-                      stream: _aiStreamController.stream,
-                      initialData: msg['content'],
-                      builder: (context, snapshot) => _buildChatBubble(snapshot.data ?? "", isAi),
+                        stream: _aiStreamController.stream,
+                        initialData: msg['content'],
+                        builder: (context, snapshot) {
+                          return _buildChatBubble({"role": "ai", "content": snapshot.data ?? ""}, isAi);
+                        }
                     );
                   }
-                  return _buildChatBubble(msg['content']!, isAi);
+                  return _buildChatBubble(msg, isAi);
                 },
               ),
               if (_isRecording)
@@ -234,8 +378,10 @@ class _HomeContentState extends State<HomeContent> with SingleTickerProviderStat
           ),
         ),
 
+        if (_pendingImages.isNotEmpty) _buildPendingImagesTray(),
+
         Padding(
-          padding: const EdgeInsets.only(bottom: 150, left: 20, right: 20),
+          padding: const EdgeInsets.only(bottom: 40, left: 20, right: 20, top: 10),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -243,14 +389,9 @@ class _HomeContentState extends State<HomeContent> with SingleTickerProviderStat
               const SizedBox(width: sideBoxWidth),
               const Spacer(),
               GestureDetector(
-                onTapDown: (_) {
-                  if (_isProcessing) return;
-                  _startRecording();
-                },
-                onTapUp: (_) {
-                  if (_isProcessing) return;
-                  _stopRecordingAndUpload();
-                },
+                onTapDown: (_) => _startRecording(),
+                onTapUp: (_) => _stopRecordingAndUpload(),
+                onTapCancel: () => _stopRecordingAndUpload(),
                 child: _buildMicButton(),
               ),
               const Spacer(),
@@ -264,7 +405,8 @@ class _HomeContentState extends State<HomeContent> with SingleTickerProviderStat
                       Container(
                         width: 60, height: 60,
                         decoration: BoxDecoration(
-                          color: Colors.white, shape: BoxShape.circle,
+                          color: Colors.white,
+                          shape: BoxShape.circle,
                           border: Border.all(color: Colors.blueAccent, width: 2),
                           boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8)],
                         ),
@@ -283,12 +425,79 @@ class _HomeContentState extends State<HomeContent> with SingleTickerProviderStat
     );
   }
 
-  Widget _buildChatBubble(String text, bool isAi) {
+  Widget _buildPendingImagesTray() {
+    return Container(
+      height: 90,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.blueGrey.shade50,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: _pendingImages.length,
+              itemBuilder: (context, index) {
+                return Stack(
+                  children: [
+                    Container(
+                      margin: const EdgeInsets.only(right: 12, top: 8),
+                      width: 60, height: 60,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.blueAccent.withOpacity(0.3)),
+                        image: DecorationImage(image: FileImage(File(_pendingImages[index])), fit: BoxFit.cover),
+                      ),
+                    ),
+                    Positioned(
+                      right: 4, top: 0,
+                      child: GestureDetector(
+                        onTap: () => setState(() => _pendingImages.removeAt(index)),
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
+                          child: const Icon(Icons.close, size: 12, color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+          const SizedBox(width: 10),
+          GestureDetector(
+            onTap: _sendImagesOnly,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(color: Colors.blueAccent, borderRadius: BorderRadius.circular(20)),
+              child: const Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.send, color: Colors.white, size: 20),
+                  SizedBox(height: 4),
+                  Text("发图片", style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChatBubble(Map<String, dynamic> msg, bool isAi) {
+    String text = msg['content'] ?? "";
+    List<String> imagePaths = msg['imagePaths'] ?? [];
+    if (msg['imagePath'] != null && imagePaths.isEmpty) imagePaths = [msg['imagePath']];
+
     return Align(
       alignment: isAi ? Alignment.centerLeft : Alignment.centerRight,
       child: Container(
         margin: EdgeInsets.only(bottom: 20, left: isAi ? 0 : 40, right: isAi ? 40 : 0),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
           color: isAi ? Colors.white : const Color(0xFFE0F2FE),
           borderRadius: BorderRadius.circular(20).copyWith(
@@ -297,32 +506,58 @@ class _HomeContentState extends State<HomeContent> with SingleTickerProviderStat
           ),
           boxShadow: isAi ? [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)] : null,
         ),
-        child: Text(text, style: const TextStyle(fontSize: AppFonts.titleMedium, height: 1.4, color: Colors.black87)),
+        child: Column(
+          crossAxisAlignment: isAi ? CrossAxisAlignment.start : CrossAxisAlignment.end,
+          children: [
+            if (imagePaths.isNotEmpty)
+              Wrap(
+                spacing: 8, runSpacing: 8,
+                children: imagePaths.map((path) => ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.file(File(path), width: 120, height: 120, fit: BoxFit.cover),
+                )).toList(),
+              ),
+            if (imagePaths.isNotEmpty && text.isNotEmpty) const SizedBox(height: 8),
+            if (text.isNotEmpty)
+              Text(text, style: const TextStyle(fontSize: AppFonts.titleMedium, height: 1.4, color: Colors.black87)),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildMicButton() {
+    Color bgColor = _isRecording ? Colors.redAccent : Colors.blueAccent;
+    String text = _isRecording ? "松开结束" : "按着说话";
+
+    if (_isProcessing && !_isRecording) {
+      bgColor = Colors.orangeAccent;
+      text = "按住打断";
+    } else if (!_isRecording && _pendingImages.isNotEmpty) {
+      text = "按住提问";
+    }
+
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
       width: 130, height: 130,
       decoration: BoxDecoration(
-        color: _isRecording ? Colors.redAccent : Colors.blueAccent,
+        color: bgColor,
         shape: BoxShape.circle,
-        boxShadow: [BoxShadow(color: (_isRecording ? Colors.red : Colors.blue).withOpacity(0.4), blurRadius: 20)],
+        boxShadow: [BoxShadow(color: bgColor.withOpacity(0.4), blurRadius: 20)],
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           const Icon(Icons.mic, color: Colors.white, size: 42),
           const SizedBox(height: 8),
-          Text(_isRecording ? "松开发送" : "按着说话", style: const TextStyle(color: Colors.white, fontSize: AppFonts.bodyMedium, fontWeight: FontWeight.bold)),
+          Text(text, style: const TextStyle(color: Colors.white, fontSize: AppFonts.bodyMedium, fontWeight: FontWeight.bold)),
         ],
       ),
     );
   }
 }
 
+// ... SiriWavePainter 保持不变 ...
 class SiriWavePainter extends CustomPainter {
   final Animation<double> animation;
   SiriWavePainter(this.animation) : super(repaint: animation);
