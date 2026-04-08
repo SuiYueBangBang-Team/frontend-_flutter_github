@@ -4,6 +4,8 @@ import 'dart:convert';
 import 'package:image_picker/image_picker.dart';
 import 'package:dio/dio.dart';
 import '../../utils/api_client.dart'; // 引入请求客户端
+import 'package:flutter_bmflocation/flutter_bmflocation.dart'; // 💡 引入百度定位
+import 'package:permission_handler/permission_handler.dart'; // 💡 别忘了引入权限包
 
 class CreatePostPage extends StatefulWidget {
   const CreatePostPage({super.key});
@@ -25,44 +27,86 @@ class _CreatePostPageState extends State<CreatePostPage> {
   List<Map> originLocationList = [];
   List<String> topicList = [];
   List<String> imageList = []; // 存放上传成功的图片URL
+  // 💡 新增：定位插件实例
+  final LocationFlutterPlugin _locationPlugin = LocationFlutterPlugin();
 
   @override
   void initState() {
     super.initState();
-    loadCurrentLocation();
-    loadRecommendLocation();
+    _checkPermissionAndLocate();
     loadTopicList();
-    loadCurrentCity();
   }
 
-  /// 当前定位
-  loadCurrentLocation() async {
-    setState(() {
-      locationName = "广州应用科技学院（肇庆校区）";
-    });
+  @override
+  void dispose() {
+    _locationPlugin.stopLocation(); // 页面销毁时停止定位
+    super.dispose();
   }
 
-  /// 当前城市
-  loadCurrentCity() async {
-    setState(() {
-      cityName = "肇庆市";
-    });
+// 💡 1. 新增：权限校验逻辑
+  Future<void> _checkPermissionAndLocate() async {
+    PermissionStatus status = await Permission.location.request();
+    if (status.isGranted) {
+      loadRealLocationAndPoi();
+    } else {
+      setState(() {
+        locationName = "未授权定位权限";
+        cityName = "未知城市";
+      });
+    }
   }
 
-  /// 推荐定位列表
-  loadRecommendLocation() async {
-    originLocationList = [
-      {"name": "广州应用科技学院（肇庆校区）", "distance": "1.0km", "address": "鼎湖区"},
-      {"name": "莲花广场", "distance": "1.3km", "address": "鼎湖区"},
-      {"name": "广科交流中心", "distance": "123m", "address": "鼎湖区"},
-      {"name": "葫芦山风景区", "distance": "1.9km", "address": "鼎湖区"},
-      {"name": "鼎湖万达广场", "distance": "2.5km", "address": "鼎湖区"},
-      {"name": "鼎湖山景区入口", "distance": "3.1km", "address": "鼎湖区"},
-    ];
+  // 💡 2. 修复：耐心等待地名解析完成后再关闭定位
+  void loadRealLocationAndPoi() async {
     setState(() {
-      locationList = originLocationList;
+      locationName = "正在获取真实定位...";
+      cityName = "定位中...";
     });
+
+    _locationPlugin.setAgreePrivacy(true);
+
+    BaiduLocationAndroidOption androidOption = BaiduLocationAndroidOption(
+      locationMode: BMFLocationMode.hightAccuracy,
+      isNeedAddress: true,
+      isNeedLocationPoiList: true,
+      openGps: true,
+      coordType: BMFLocationCoordType.bd09ll,
+      // 💡 修复：改为 1000（1秒），允许它多定位几次，直到把地名解析出来
+      scanspan: 1000,
+    );
+    await _locationPlugin.prepareLoc(androidOption.getMap(), {});
+
+    _locationPlugin.seriesLocationCallback(callback: (BaiduLocation result) {
+      if (!mounted) return;
+
+      // 💡 核心拦截：如果百度只返回了经纬度，还没把“城市”和“地址”解析出来，就直接 Return，等下一次回调！
+      if (result.city == null && result.address == null) {
+        return;
+      }
+
+      setState(() {
+        cityName = result.city ?? "未知城市";
+        locationName = result.locationDetail ?? result.address ?? "未知位置";
+
+        if (result.pois != null && result.pois!.isNotEmpty) {
+          originLocationList = result.pois!.map((poi) => {
+            "name": poi.name ?? "未知位置",
+            "distance": "附近",
+            "address": poi.addr ?? ""
+          }).toList();
+        } else {
+          originLocationList = [{"name": locationName, "distance": "当前", "address": result.district ?? ""}];
+        }
+        locationList = originLocationList;
+      });
+
+      // 💡 只有在成功拿到包含地址的完整数据后，才真正停止定位，省电！
+      _locationPlugin.stopLocation();
+    });
+
+    await _locationPlugin.startLocation();
   }
+
 
   /// 搜索定位
   searchLocation(keyword) async {

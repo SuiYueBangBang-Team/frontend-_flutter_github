@@ -50,7 +50,7 @@
     </queries>
 
     <application
-        android:label="phone_java"
+        android:label="岁悦帮帮"
         android:name=".MyApplication" android:icon="@mipmap/ic_launcher">
 
         <meta-data
