@@ -4,11 +4,13 @@ import 'package:phone_java/page/home_content.dart';
 import 'package:phone_java/app_fonts.dart'; //  必须引入含有 FontManager 和 UserProfileManager 的文件
 import 'package:phone_java/page/settings_page.dart';
 import 'package:flutter/material.dart';
-
 // 定位相关的插件
 import 'package:flutter_bmflocation/flutter_bmflocation.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:phone_java/utils/api_client.dart';
+import 'dart:async'; //  用于定时器
+import 'package:battery_plus/battery_plus.dart'; //  用于获取真实电量
+import 'package:volume_controller/volume_controller.dart'; //  用于获取真实系统音量
 
 class IndexPage extends StatefulWidget {
   const IndexPage({super.key});
@@ -31,6 +33,9 @@ class _IndexPageState extends State<IndexPage> {
 
   // 长辈端专属的静默后台定位插件
   final LocationFlutterPlugin _locationPlugin = LocationFlutterPlugin();
+  // 心跳定时器与硬件状态实例
+  Timer? _heartbeatTimer;
+  final Battery _battery = Battery();
 
   @override
   void initState() {
@@ -71,12 +76,16 @@ class _IndexPageState extends State<IndexPage> {
     ];
     // 长辈一进入主界面，立刻申请权限并开启 5 秒循环定位上报
     _requestPermissionAndStartReport();
+    // 新增：立刻启动设备心跳后台轮询
+    _startHeartbeatReport();
   }
 
   @override
   void dispose() {
     //  退出登录或销毁页面时，必须停止定位节省电量
     _locationPlugin.stopLocation();
+    // 退出登录或销毁页面时，停止心跳发送
+    _heartbeatTimer?.cancel();
     super.dispose();
   }
 
@@ -147,7 +156,7 @@ class _IndexPageState extends State<IndexPage> {
   }
 
 
-  //  核心：5 秒/次 持续上报逻辑
+  //  核心：5 秒/次 位置持续上报逻辑
   void _startElderlyLocationReport() async {
     try {
       debugPrint("📌 [长辈端] 定位流程 1: 设置隐私政策...");
@@ -159,7 +168,7 @@ class _IndexPageState extends State<IndexPage> {
         isNeedAddress: false, //  不解析地址（省流省电），只要经纬度
         openGps: true,
         coordType: BMFLocationCoordType.bd09ll,
-        scanspan: 5000, //  重点：5000 毫秒（5秒）上报一次
+        scanspan: 7000,
       );
       await _locationPlugin.prepareLoc(androidOption.getMap(), {});
 
@@ -174,7 +183,7 @@ class _IndexPageState extends State<IndexPage> {
             await ApiClient().post(
                 '/api/location/report?lat=${result.latitude}&lng=${result.longitude}'
             );
-            debugPrint("✅ [长辈端] 坐标上报后端成功！(5秒后下一次)");
+            debugPrint("✅ [长辈端] 坐标上报后端成功！");
           } catch (e) {
             debugPrint("❌ [长辈端] 上报后端失败: $e");
           }
@@ -189,6 +198,39 @@ class _IndexPageState extends State<IndexPage> {
 
     } catch (e) {
       debugPrint("❌ [长辈端] 定位模块启动异常: $e");
+    }
+  }
+
+  // 💡 核心新增：长辈端设备心跳后台轮询 (电量、音量、在线状态)
+  void _startHeartbeatReport() {
+    // 1. 初始化时立刻主动上报一次
+    _reportHeartbeat();
+
+    // 2. 开启定时器，每 30 秒上报一次心跳 (后端 Redis 会维持 10 分钟在线，30秒非常安全且省电)
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      _reportHeartbeat();
+    });
+  }
+
+  // 💡 执行具体的心跳拉取与上报
+  Future<void> _reportHeartbeat() async {
+    try {
+      // 1. 获取真实系统电量 (0-100)
+      int batteryLevel = await _battery.batteryLevel;
+
+      // 2. 获取真实系统音量 (插件返回 0.0 - 1.0，我们乘以100转为整形)
+      double volume = await VolumeController().getVolume();
+      int volumeLevel = (volume * 100).toInt();
+
+      // 3. 发送给后端
+      // 备注：后端接口要求传 deviceId，但底层实际使用的是 token 里的 userId，所以这里传 Elder_Device 占位即可
+      await ApiClient().post(
+          '/api/device/htbtreport?deviceId=Elder_Device&battery=$batteryLevel&volume_level=$volumeLevel'
+      );
+
+      debugPrint("💓 [长辈端] 设备心跳上报成功！当前电量: $batteryLevel%, 当前音量: $volumeLevel% (30秒后下一次)");
+    } catch (e) {
+      debugPrint("❌ [长辈端] 设备心跳上报失败: $e");
     }
   }
 
