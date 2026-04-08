@@ -220,7 +220,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
               CircleAvatar(
                 radius: 24,
                 backgroundColor: Colors.grey.shade200,
-                // 💡 完全废弃本地图片兜底
+                //  完全废弃本地图片兜底
                 backgroundImage: displayAvatarUrl.isNotEmpty ? NetworkImage(displayAvatarUrl) : null,
                 child: displayAvatarUrl.isEmpty ? const Icon(Icons.person, color: Colors.grey, size: 30) : null,
               ),
@@ -291,7 +291,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
               CircleAvatar(
                 radius: 18,
                 backgroundColor: Colors.grey.shade200,
-                // 💡 完全废弃本地图片兜底
+                //  完全废弃本地图片兜底
                 backgroundImage: commentAvatarUrl.isNotEmpty ? NetworkImage(commentAvatarUrl) : null,
                 child: commentAvatarUrl.isEmpty ? const Icon(Icons.person, color: Colors.grey, size: 24) : null,
               ),

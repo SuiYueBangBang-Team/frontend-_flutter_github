@@ -75,9 +75,9 @@ class _PhoneInputPageState extends State<PhoneInputPage> {
         return;
       }
 
-      // 💡 恢复：真实发送验证码接口
+      //  恢复：真实发送验证码接口
       try {
-        // 💡 核心修改1：把 role 一并传给后端进行校验
+        //  核心修改1：把 role 一并传给后端进行校验
         await ApiClient().post('/api/auth/send-sms', data: {
           "phone": input,
           "role": role
@@ -90,7 +90,7 @@ class _PhoneInputPageState extends State<PhoneInputPage> {
         startCountdown();
         _showSnackBar("验证码已发送");
       } catch (e) {
-        // 💡 核心修改2：拦截后端的报错，把 "Exception: " 统一去掉，直接显示警告提示
+        //  核心修改2：拦截后端的报错，把 "Exception: " 统一去掉，直接显示警告提示
         String errorMsg = e.toString().replaceAll("Exception: ", "");
         _showSnackBar(errorMsg);
       }
@@ -119,7 +119,7 @@ class _PhoneInputPageState extends State<PhoneInputPage> {
         return;
       }
 
-      // 💡 恢复：真实的登录验证接口，并结合了新版的 role 身份控制
+      //  恢复：真实的登录验证接口，并结合了新版的 role 身份控制
       try {
         _showSnackBar("正在登录...");
         var response = await ApiClient().post('/api/auth/login', data: {
@@ -149,7 +149,7 @@ class _PhoneInputPageState extends State<PhoneInputPage> {
           }
         }
       } catch (e) {
-        // 💡 修改这里：拦截后端的报错，把 "Exception: " 统一去掉，直接显示警告提示
+        //  修改这里：拦截后端的报错，把 "Exception: " 统一去掉，直接显示警告提示
         String errorMsg = e.toString().replaceAll("Exception: ", "");
         _showSnackBar(errorMsg);
       }

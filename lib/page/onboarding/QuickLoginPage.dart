@@ -21,7 +21,7 @@ class _QuickLoginPageState extends State<QuickLoginPage> {
 
     Future.delayed(const Duration(milliseconds: 1000), () {
       if (mounted) {
-        // 💡 核心修改：带着 role 继续跳
+        //  核心修改：带着 role 继续跳
         Navigator.pushNamed(context, '/phone_input', arguments: role);
       }
     });
@@ -29,7 +29,7 @@ class _QuickLoginPageState extends State<QuickLoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    // 💡 核心修改：接收上一个页面传来的角色参数，默认是长辈
+    //  核心修改：接收上一个页面传来的角色参数，默认是长辈
     final role = ModalRoute.of(context)?.settings.arguments as String? ?? 'ELDER';
     final isChild = role == 'CHILD';
 
@@ -42,11 +42,11 @@ class _QuickLoginPageState extends State<QuickLoginPage> {
           children: [
             /// 顶部标题
             GestureDetector(
-              // 💡 核心修改：统一改成 pop 返回上一页（选角色页）
+              //  核心修改：统一改成 pop 返回上一页（选角色页）
               onTap: () => Navigator.pop(context),
               child: Center(
                 child: Text(
-                  // 💡 核心修改：动态改变标题
+                  //  核心修改：动态改变标题
                   isChild ? "子女端登录" : "长辈端登录",
                   style: const TextStyle(
                     fontSize: 32,
@@ -93,7 +93,7 @@ class _QuickLoginPageState extends State<QuickLoginPage> {
                   ),
                   IconButton(
                     icon: const Icon(Icons.edit_note_rounded, color: Colors.blueAccent, size: 30),
-                    // 💡 核心修改：带着 role 跳去验证码页
+                    //  核心修改：带着 role 跳去验证码页
                     onPressed: () => Navigator.pushNamed(context, '/phone_input', arguments: role),
                   ),
                 ],
@@ -143,7 +143,7 @@ class _QuickLoginPageState extends State<QuickLoginPage> {
                     borderRadius: BorderRadius.circular(30),
                   ),
                 ),
-                // 💡 核心修改：传入 role
+                //  核心修改：传入 role
                 onPressed: agree ? () => _handleQuickLogin(role) : null,
                 child: Text(
                   "一键登录",

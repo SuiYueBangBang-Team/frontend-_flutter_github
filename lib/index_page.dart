@@ -1,9 +1,14 @@
 import 'package:phone_java/page/family_page.dart';
 import 'package:phone_java/page/health_page.dart';
 import 'package:phone_java/page/home_content.dart';
-import 'package:phone_java/app_fonts.dart'; // 💡 必须引入含有 FontManager 和 UserProfileManager 的文件
+import 'package:phone_java/app_fonts.dart'; //  必须引入含有 FontManager 和 UserProfileManager 的文件
 import 'package:phone_java/page/settings_page.dart';
 import 'package:flutter/material.dart';
+
+// 定位相关的插件
+import 'package:flutter_bmflocation/flutter_bmflocation.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:phone_java/utils/api_client.dart';
 
 class IndexPage extends StatefulWidget {
   const IndexPage({super.key});
@@ -23,6 +28,9 @@ class _IndexPageState extends State<IndexPage> {
   final Color blue50 = const Color(0xFFEFF6FF);
 
   late final List<Map<String, dynamic>> _tabs;
+
+  // 长辈端专属的静默后台定位插件
+  final LocationFlutterPlugin _locationPlugin = LocationFlutterPlugin();
 
   @override
   void initState() {
@@ -61,13 +69,134 @@ class _IndexPageState extends State<IndexPage> {
         'page': const SettingsPage(),
       },
     ];
+    // 长辈一进入主界面，立刻申请权限并开启 5 秒循环定位上报
+    _requestPermissionAndStartReport();
+  }
+
+  @override
+  void dispose() {
+    //  退出登录或销毁页面时，必须停止定位节省电量
+    _locationPlugin.stopLocation();
+    super.dispose();
+  }
+
+
+// 优化的权限申请逻辑，两步走解决直接跳到设置请求始终位置的问题
+  Future<void> _requestPermissionAndStartReport() async {
+    // 1. 先像子女端一样，请求普通前台定位权限（会弹出系统默认的授权框）
+    PermissionStatus status = await Permission.location.request();
+
+    if (status.isGranted) {
+      // 只要拿到了前台权限，就立刻把定位轮询跑起来，保证应用在亮屏时正常工作
+      _startElderlyLocationReport();
+
+      // 2. 检查是否已经有了后台定位权限 (locationAlways)
+      PermissionStatus alwaysStatus = await Permission.locationAlways.status;
+
+      // 如果还没有后台定位权限，弹出一个我们自定义的温馨提示框，引导长辈去设置
+      if (!alwaysStatus.isGranted && mounted) {
+        _showBackgroundLocationGuide();
+      }
+    } else {
+      debugPrint("⚠️ [长辈端] 定位权限被拒绝，无法向子女上报位置！");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("请允许定位权限，否则子女无法确认您的安全")));
+      }
+    }
+  }
+
+  // 引导去设置页开启后台定位的友好弹窗
+  void _showBackgroundLocationGuide() {
+    showDialog(
+      context: context,
+      barrierDismissible: false, // 防止误触关掉
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.security_rounded, color: Colors.blueAccent, size: 28),
+            SizedBox(width: 8),
+            Text("开启后台守护", style: TextStyle(fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: const Text(
+          "为了让子女在您手机息屏时也能确认您的安全，请在接下来的设置页面中，将定位权限修改为【始终允许】。",
+          style: TextStyle(fontSize: 16, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("稍后再说", style: TextStyle(color: Colors.grey, fontSize: 16)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blueAccent,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () async {
+              Navigator.pop(context);
+              //  长辈知情并同意后，再触发强制跳转设置页的逻辑，体验就非常自然了
+              await Permission.locationAlways.request();
+            },
+            child: const Text("去设置", style: TextStyle(color: Colors.white, fontSize: 16)),
+          ),
+        ],
+      ),
+    );
+  }
+
+
+  //  核心：5 秒/次 持续上报逻辑
+  void _startElderlyLocationReport() async {
+    try {
+      debugPrint("📌 [长辈端] 定位流程 1: 设置隐私政策...");
+      _locationPlugin.setAgreePrivacy(true);
+
+      debugPrint("📌 [长辈端] 定位流程 2: 初始化定位参数...");
+      BaiduLocationAndroidOption androidOption = BaiduLocationAndroidOption(
+        locationMode: BMFLocationMode.hightAccuracy,
+        isNeedAddress: false, //  不解析地址（省流省电），只要经纬度
+        openGps: true,
+        coordType: BMFLocationCoordType.bd09ll,
+        scanspan: 5000, //  重点：5000 毫秒（5秒）上报一次
+      );
+      await _locationPlugin.prepareLoc(androidOption.getMap(), {});
+
+      debugPrint("📌 [长辈端] 定位流程 3: 注册连续回调...");
+      _locationPlugin.seriesLocationCallback(callback: (BaiduLocation result) async {
+        if (result.latitude != null && result.longitude != null && result.latitude! > 1.0) {
+          debugPrint("📍 [长辈端] 捕获坐标: 经度=${result.longitude}, 纬度=${result.latitude}，准备上报后端...");
+
+          try {
+            //  重点防坑：因为你的后端 Controller 中使用了 @RequestParam("lat")，
+            // 所以 ApiClient 不能直接传 data:{}，必须把参数拼接在 URL 后面，或者使用 FormData。
+            await ApiClient().post(
+                '/api/location/report?lat=${result.latitude}&lng=${result.longitude}'
+            );
+            debugPrint("✅ [长辈端] 坐标上报后端成功！(5秒后下一次)");
+          } catch (e) {
+            debugPrint("❌ [长辈端] 上报后端失败: $e");
+          }
+
+        } else {
+          debugPrint("⚠️ [长辈端] 捕获坐标无效，错误码=${result.errorCode}");
+        }
+      });
+
+      debugPrint("📌 [长辈端] 定位流程 4: 正式启动后台定位轮询！");
+      await _locationPlugin.startLocation();
+
+    } catch (e) {
+      debugPrint("❌ [长辈端] 定位模块启动异常: $e");
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final currentTab = _tabs[_currentIndex];
 
-    // 💡 关键：同时监听字体缩放和用户信息（头像）的变化
+    //  关键：同时监听字体缩放和用户信息（头像）的变化
     return ListenableBuilder(
       listenable: Listenable.merge([FontManager(), UserProfileManager()]),
       builder: (context, child) {
@@ -85,7 +214,7 @@ class _IndexPageState extends State<IndexPage> {
                 bottom: false,
                 child: Row(
                   children: [
-                    // 💡 左侧：固定宽度 90，确保不挤压标题
+                    //  左侧：固定宽度 90，确保不挤压标题
                     SizedBox(
                       width: 90,
                       child: _currentIndex == 0
@@ -94,7 +223,7 @@ class _IndexPageState extends State<IndexPage> {
                           radius: 28, // 放大后的背景圈
                           backgroundColor: blue50,
                           child: Icon(
-                            // 💡 从全局管理器获取当前选中的图标
+                            //  从全局管理器获取当前选中的图标
                             UserProfileManager().currentAvatarIcon,
                             color: Colors.blueAccent,
                             size: 38, // 放大后的图标大小
@@ -129,7 +258,7 @@ class _IndexPageState extends State<IndexPage> {
                       ),
                     ),
 
-                    // 💡 右侧：固定宽度 90 的透明占位，实现标题绝对居中
+                    //  右侧：固定宽度 90 的透明占位，实现标题绝对居中
                     const SizedBox(width: 90),
                   ],
                 ),

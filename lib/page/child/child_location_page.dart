@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import '../../utils/api_client.dart'; // 💡 引入真实请求客户端
+import '../../utils/api_client.dart'; //  引入真实请求客户端
 
-// 💡 引入基础地图库与工具
+//  引入基础地图库与工具
 import 'package:flutter_baidu_mapapi_base/flutter_baidu_mapapi_base.dart'; //
 import 'package:flutter_baidu_mapapi_map/flutter_baidu_mapapi_map.dart'; //
 
-// 💡 使用这个标准的包引入，它完美兼容最新版的所有接口
+//  使用这个标准的包引入，它完美兼容最新版的所有接口
 import 'package:flutter_bmflocation/flutter_bmflocation.dart';
 import 'package:permission_handler/permission_handler.dart'; // 用于申请定位权限
 
@@ -21,9 +21,8 @@ class ChildLocationPage extends StatefulWidget {
 class _ChildLocationPageState extends State<ChildLocationPage> {
   List<Map<String, dynamic>> boundDevices = [];
   bool isLoading = true;
-  bool _isTrackingLocked = false;
   String? selectedDeviceId;
-  // 💡 新增：百度地图控制器
+  //  新增：百度地图控制器
   BMFMapController? myMapController;
 
   // 初始化定位插件类
@@ -55,13 +54,13 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
         isNeedAddress: true,
         openGps: true,
         coordType: BMFLocationCoordType.bd09ll,
-        scanspan: 2000,
+        scanspan: 4000,
       );
       await _locationPlugin.prepareLoc(androidOption.getMap(), {});
 
       debugPrint("📌 定位流程 3: 正在注册定位回调...");
       _locationPlugin.seriesLocationCallback(callback: (BaiduLocation result) {
-        // 💡 无论成功失败，只要百度给回应了，就会打印这句话
+        //  无论成功失败，只要百度给回应了，就会打印这句话
         debugPrint("📍 百度定位回调到达! 错误码=${result.errorCode}, 经度=${result.longitude}, 纬度=${result.latitude}");
 
         if (!mounted) return;
@@ -71,7 +70,7 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
             myLocation['lng'] = result.longitude!;
           });
           _updateMapOverlays();
-          if (_isFirstLocation && myMapController != null && !_isTrackingLocked) {
+          if (_isFirstLocation && myMapController != null) {
             myMapController?.setCenterCoordinate(
                 BMFCoordinate(result.latitude!, result.longitude!), true);
             _isFirstLocation = false;
@@ -111,13 +110,13 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
     super.dispose();
   }
 
-  // 💡 真实接口：获取已绑定的长辈设备列表
+  //  真实接口：获取已绑定的长辈设备列表
   Future<void> _fetchLocationData() async {
     setState(() => isLoading = true);
 
     try {
-      // 请求后端 /api/family/devices
-      var response = await ApiClient().get('/api/family/devices');
+      // 请求后端
+      var response = await ApiClient().get('/api/location/all');
 
       if (response != null) {
         List<dynamic> list = response is List ? response : (response['data'] ?? []);
@@ -160,19 +159,12 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
       // 1. 每隔一段时间，去后端拉取一次长辈的最新位置
       _fetchLocationData();
 
-      // 2. 视角追踪逻辑保留,跟踪逻辑：若开启了导航居中且存在选中设备，则转移地图视角
-      if (_isTrackingLocked && selectedDeviceId != null) {
-        var targetDevice = boundDevices.firstWhere((d) => d['id'] == selectedDeviceId, orElse: () => {});
-        if (targetDevice.isNotEmpty && targetDevice['isOnline'] == true) {
-          myMapController?.setCenterCoordinate(
-              BMFCoordinate(targetDevice['lat'], targetDevice['lng']), true);
-        }
-      }
+
     });
   }
 
 
-// 💡 核心新增：绘制真实地图覆盖物
+//  核心新增：绘制真实地图覆盖物
   void _updateMapOverlays() {
     if (myMapController == null) return;
     myMapController?.cleanAllMarkers(); // 清除旧图标
@@ -200,7 +192,7 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
     }
   }
 
-  // 💡 真实接口：绑定设备弹窗
+  //  真实接口：绑定设备弹窗
   void _showBindDeviceDialog() {
     final TextEditingController phoneController = TextEditingController();
     final TextEditingController codeController = TextEditingController();
@@ -243,7 +235,7 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
                           )
                       ),
                       const SizedBox(width: 10),
-                      // 💡 发送验证码按钮
+                      //  发送验证码按钮
                       SizedBox(
                         height: 55,
                         child: ElevatedButton(
@@ -285,7 +277,7 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
               ),
               actions: [
                 TextButton(onPressed: () => Navigator.pop(context), child: const Text("取消")),
-                // 💡 确认绑定按钮
+                //  确认绑定按钮
                 ElevatedButton(
                   onPressed: isBinding ? null : () async {
                     if (phoneController.text.isEmpty || codeController.text.isEmpty) {
@@ -339,18 +331,19 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
             right: 16,
             child: Column(
               children: [
+                // 仅保留定位按钮，并修改为固定图标与直接跳转逻辑
                 _buildMapControlButton(
-                  icon: Icons.layers_rounded,
-                  onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("切换地图图层"))),
-                ),
-                const SizedBox(height: 12),
-                _buildMapControlButton(
-                  icon: _isTrackingLocked ? Icons.navigation_rounded : Icons.near_me_outlined,
-                  color: _isTrackingLocked ? Colors.blueAccent : Colors.black87,
+                  icon: Icons.near_me, // 使用固定图标
+                  color: Colors.black87, // 固定颜色，取消原有的蓝色激活状态
                   onTap: () {
-                    setState(() {
-                      _isTrackingLocked = !_isTrackingLocked;
-                    });
+                    // 新增：点击时先强制触发一次状态更新，并重新绘制地图上的标记点
+                    setState(() {});
+                    _updateMapOverlays();
+                    // 点击立即回到“我的位置”
+                    if (myMapController != null && myLocation['lat'] != null) {
+                      myMapController?.setCenterCoordinate(
+                          BMFCoordinate(myLocation['lat']!, myLocation['lng']!), true);
+                    }
                   },
                 ),
               ],
@@ -394,7 +387,7 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
                         children: [
                           const Text("家庭设备", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
                           IconButton(
-                            onPressed: _showBindDeviceDialog, // 💡 唤起真实绑定弹窗
+                            onPressed: _showBindDeviceDialog, //  唤起真实绑定弹窗
                             icon: const Icon(Icons.add, size: 28, color: Colors.blueAccent),
                           ),
                         ],
@@ -433,6 +426,12 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
           return;
         }
         setState(() => selectedDeviceId = device['id']);
+
+        //  新增：点击长辈设备后，地图立刻平滑跳转到该长辈的经纬度位置
+        if (myMapController != null) {
+          myMapController?.setCenterCoordinate(
+              BMFCoordinate(device['lat']!, device['lng']!), true);
+        }
       },
       child: Container(
         color: isSelected ? Colors.blue.withOpacity(0.05) : Colors.transparent,
@@ -489,21 +488,31 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
     );
   }
 
-  // 悬浮按钮组件
+  /// 悬浮按钮组件 (已增加点击水波纹动效)
   Widget _buildMapControlButton({required IconData icon, required VoidCallback onTap, Color color = Colors.black87}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 48, height: 48,
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 10, offset: const Offset(0, 4))]),
-        child: Icon(icon, color: color, size: 26),
+    return Container(
+      width: 48, height: 48,
+      decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 10, offset: const Offset(0, 4))]
+      ),
+      //  使用 Material 和 InkWell 包裹 Icon，实现原生的点击水波纹动效
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Icon(icon, color: color, size: 26),
+        ),
       ),
     );
   }
 
 // 🗺️ 替换为真实的地图图层 Widget
   Widget _buildMapLayer() {
-    // 💡 构造包含了中心点坐标、缩放级别以及预留边界等状态参数的地图选项
+    //  构造包含了中心点坐标、缩放级别以及预留边界等状态参数的地图选项
     BMFMapOptions mapOptions = BMFMapOptions(
         center: BMFCoordinate(myLocation['lat']!, myLocation['lng']!),
         zoomLevel: 15,
@@ -513,7 +522,7 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
       width: double.infinity,
       height: double.infinity,
       color: const Color(0xFFF1F0EA),
-      // 💡 BMFMapWidget 替代旧版 FakePainter
+      //  BMFMapWidget 替代旧版 FakePainter
       child: BMFMapWidget(
         onBMFMapCreated: (controller) {
           myMapController = controller;

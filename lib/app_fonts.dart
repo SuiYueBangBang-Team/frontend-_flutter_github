@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-// 💡 全局字体管理器
+//  全局字体管理器
 class FontManager extends ChangeNotifier {
   static final FontManager _instance = FontManager._internal();
   factory FontManager() => _instance;
@@ -26,7 +26,7 @@ class AppFonts {
   static const double caption = 14.0;
 }
 
-// 💡 新增：全局用户信息管理器 (同步头像与语言)
+//  新增：全局用户信息管理器 (同步头像与语言)
 class UserProfileManager extends ChangeNotifier {
   static final UserProfileManager _instance = UserProfileManager._internal();
   factory UserProfileManager() => _instance;
@@ -49,7 +49,7 @@ class UserProfileManager extends ChangeNotifier {
     notifyListeners();
   }
 
-  // 💡 统一存放头像和语言数据，避免各个页面重复写
+  //  统一存放头像和语言数据，避免各个页面重复写
   static final List<Map<String, dynamic>> avatars = [
     {"name": "小女孩", "icon": Icons.auto_awesome},
     {"name": "小男孩", "icon": Icons.face},

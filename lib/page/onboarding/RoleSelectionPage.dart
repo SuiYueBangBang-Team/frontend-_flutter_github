@@ -20,7 +20,7 @@ class RoleSelectionPage extends StatelessWidget {
 
             // 角色按钮：父母
             _buildRoleCard(context, "我是长辈", Icons.elderly, Colors.blue, () {
-              // 💡 核心修改：带上 ELDER 参数
+              //  核心修改：带上 ELDER 参数
               Navigator.pushNamed(context, '/login', arguments: 'ELDER');
             }),
 
@@ -28,7 +28,7 @@ class RoleSelectionPage extends StatelessWidget {
 
             // 角色按钮：子女
             _buildRoleCard(context, "我是子女", Icons.family_restroom, Colors.green, () {
-              // 💡 核心修改：带上 CHILD 参数
+              //  核心修改：带上 CHILD 参数
               Navigator.pushNamed(context, '/login', arguments: 'CHILD');
             }),
           ],
