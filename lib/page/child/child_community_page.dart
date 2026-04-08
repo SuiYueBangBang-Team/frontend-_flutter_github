@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import '../../utils/api_client.dart';
 import 'post_detail_page.dart';
+import 'package:flutter_bmflocation/flutter_bmflocation.dart'; //  引入定位
 
 class ChildCommunityPage extends StatefulWidget {
   const ChildCommunityPage({super.key});
@@ -30,11 +31,104 @@ class _ChildCommunityPageState extends State<ChildCommunityPage> {
   String currentUserNickname = "";
   String currentUserAvatar = "";
 
+  final LocationFlutterPlugin _locationPlugin = LocationFlutterPlugin();
+
   @override
   void initState() {
     super.initState();
     loadUserInfo();
-    loadProvinceList();
+    _autoLocateCurrentCity(); //  1. 自动定位当前真实城市
+    _fetchRealProvinces();    //  2. 去后端拉取真实的全国省份数据
+  }
+
+  // UX 升级：一进入社区，利用百度SDK自动获取用户真实城市并筛选帖子
+  void _autoLocateCurrentCity() async {
+    // 这里如果之前没有请求过权限，最好也加上权限请求（通常在首页或发帖页已经授权过）
+    _locationPlugin.setAgreePrivacy(true);
+    BaiduLocationAndroidOption androidOption = BaiduLocationAndroidOption(
+      isNeedAddress: true,
+      coordType: BMFLocationCoordType.bd09ll,
+      scanspan: 1000, // 💡 修复：改为 1000，持续请求直到拿到省市
+    );
+    await _locationPlugin.prepareLoc(androidOption.getMap(), {});
+
+    _locationPlugin.seriesLocationCallback(callback: (BaiduLocation result) {
+      if (!mounted) return;
+
+      // 💡 核心拦截：如果还没解析出省市，直接跳过等下一次
+      if (result.province == null || result.city == null) {
+        return;
+      }
+
+      setState(() {
+        province = result.province;
+        city = result.city;
+        district = result.district;
+      });
+      loadPostList(); // 拿到真实城市后，自动刷新列表
+
+      // 💡 拿到真实地名后，再关掉定位
+      _locationPlugin.stopLocation();
+    });
+    await _locationPlugin.startLocation();
+  }
+
+  Future<void> _fetchRealProvinces() async {
+    try {
+      // 💡 真实场景下，向后端请求全国省份列表
+      // var res = await ApiClient().get('/api/common/regions/provinces');
+      // provinces = ["全部省份", ...List<String>.from(res)];
+
+      // 假设后端接口还没写好，暂时用这几个占位，等后端写好了去掉注释即可
+      provinces = ["全部省份", "广东省", "北京市", "上海市", "浙江省", "江苏省"];
+      setState(() {});
+    } catch (e) {
+      debugPrint("获取省份失败: $e");
+    }
+  }
+
+  Future<void> loadCityList(String selectedProvince) async {
+    if (selectedProvince == "全部省份") {
+      setState(() { cities = ["全部城市"]; });
+      return;
+    }
+    try {
+      // 💡 真实请求：根据省份拉取下属城市
+      // var res = await ApiClient().get('/api/common/regions/cities?province=$selectedProvince');
+      // cities = ["全部城市", ...List<String>.from(res)];
+
+      // 暂用假数据兜底
+      if (selectedProvince == "广东省") cities = ["全部城市", "广州市", "深圳市", "肇庆市"];
+      else cities = ["全部城市", "其他市测试"];
+      setState(() {});
+    } catch (e) {
+      debugPrint("获取城市失败: $e");
+    }
+  }
+
+  Future<void> loadDistrictList(String selectedCity) async {
+    if (selectedCity == "全部城市") {
+      setState(() { districts = ["全部区县"]; });
+      return;
+    }
+    try {
+      // 💡 真实请求：根据城市拉取下属区县
+      // var res = await ApiClient().get('/api/common/regions/districts?city=$selectedCity');
+      // districts = ["全部区县", ...List<String>.from(res)];
+
+      // 暂用假数据兜底
+      if (selectedCity == "肇庆市") districts = ["全部区县", "端州区", "鼎湖区", "高要区"];
+      else districts = ["全部区县", "其他区测试"];
+      setState(() {});
+    } catch (e) {
+      debugPrint("获取区县失败: $e");
+    }
+  }
+
+  @override
+  void dispose() {
+    _locationPlugin.stopLocation();
+    super.dispose();
   }
 
   @override
@@ -52,29 +146,7 @@ class _ChildCommunityPageState extends State<ChildCommunityPage> {
     });
   }
 
-  loadProvinceList() {
-    provinces = ["全部省份", "广东省", "北京市", "上海市", "浙江省", "江苏省"];
-    setState(() {});
-  }
 
-  loadCityList(String province) {
-    if (province == "广东省") cities = ["全部城市", "广州市", "深圳市"];
-    else if (province == "北京市") cities = ["全部城市", "北京市"];
-    else if (province == "上海市") cities = ["全部城市", "上海市"];
-    else if (province == "浙江省") cities = ["全部城市", "杭州市"];
-    else if (province == "江苏省") cities = ["全部城市", "南京市"];
-    else cities = ["全部城市"];
-    setState(() {});
-  }
-
-  loadDistrictList(String city) {
-    if (city == "广州市") districts = ["全部区县", "番禺区", "天河区"];
-    else if (city == "深圳市") districts = ["全部区县", "南山区", "福田区"];
-    else if (city == "北京市") districts = ["全部区县", "海淀区", "朝阳区"];
-    else if (city == "南京市") districts = ["全部区县", "玄武区"];
-    else districts = ["全部区县"];
-    setState(() {});
-  }
 
   Future<void> loadPostList() async {
     setState(() => isLoading = true);

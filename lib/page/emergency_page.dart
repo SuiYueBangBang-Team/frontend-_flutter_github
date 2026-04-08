@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../app_fonts.dart';       //  使用相对路径
 import '../utils/api_client.dart'; //  引入请求客户端
+import 'package:flutter_bmflocation/flutter_bmflocation.dart'; //  引入百度定位
+import 'package:permission_handler/permission_handler.dart'; //  引入权限申请
 
 class EmergencyPage extends StatefulWidget {
   const EmergencyPage({super.key});
@@ -18,12 +20,19 @@ class _EmergencyPageState extends State<EmergencyPage> with SingleTickerProvider
 
   List<Map<String, dynamic>> contacts = [];
 
+  // 真实位置变量与定位插件
+  String currentLocation = "正在获取真实位置...";
+  final LocationFlutterPlugin _locationPlugin = LocationFlutterPlugin();
+
   @override
   void initState() {
     super.initState();
     //  页面加载时自动获取家人作为紧急联系人
     _fetchEmergencyContacts();
     startTimer();
+
+    // 新增：页面加载时立即请求权限并获取真实定位
+    _checkPermissionAndLocate();
 
     _iconController = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))..repeat(reverse: true);
     _iconAnimation = Tween(begin: 1.0, end: 1.15).animate(CurvedAnimation(parent: _iconController, curve: Curves.easeInOut));
@@ -55,7 +64,7 @@ class _EmergencyPageState extends State<EmergencyPage> with SingleTickerProvider
     try {
       await ApiClient().post('/api/emergency/trigger', data: {
         "type": "AUTO",
-        "location": "北京市朝阳区建国路88号"
+        "location": currentLocation // 💡 替换为真实位置
       });
       if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("已自动发短信给紧急联系人")));
     } catch (e) {}
@@ -65,7 +74,7 @@ class _EmergencyPageState extends State<EmergencyPage> with SingleTickerProvider
     try {
       await ApiClient().post('/api/emergency/trigger', data: {
         "type": "MANUAL",
-        "location": "北京市朝阳区建国路88号"
+        "location": currentLocation // 💡 替换为真实位置
       });
       if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("正在拨打120并通知家属...")));
     } catch (e) {}
@@ -75,7 +84,54 @@ class _EmergencyPageState extends State<EmergencyPage> with SingleTickerProvider
   void dispose() {
     timer?.cancel();
     _iconController.dispose();
+    // 页面销毁时务必停止定位，防止内存泄露
+    _locationPlugin.stopLocation();
     super.dispose();
+  }
+
+  // 💡 获取定位权限
+  Future<void> _checkPermissionAndLocate() async {
+    PermissionStatus status = await Permission.location.request();
+    if (status.isGranted) {
+      _startRealLocation();
+    } else {
+      setState(() {
+        currentLocation = "未授权定位权限，无法获取位置";
+      });
+    }
+  }
+
+  // 💡 启动真实单次定位
+  void _startRealLocation() async {
+    _locationPlugin.setAgreePrivacy(true);
+
+    BaiduLocationAndroidOption androidOption = BaiduLocationAndroidOption(
+      locationMode: BMFLocationMode.hightAccuracy,
+      isNeedAddress: true, // 必须开启地址解析，否则全是经纬度数字
+      openGps: true,
+      coordType: BMFLocationCoordType.bd09ll,
+      scanspan: 1000, // 持续轮询，直到百度把中文街道名解析出来
+    );
+    await _locationPlugin.prepareLoc(androidOption.getMap(), {});
+
+    _locationPlugin.seriesLocationCallback(callback: (BaiduLocation result) {
+      if (!mounted) return;
+
+      // 💡 拦截：如果百度只给了经纬度，还没把中文街道解析出来，就跳过等下一秒
+      if (result.address == null && result.locationDetail == null) {
+        return;
+      }
+
+      // 拿到真实地址后，更新 UI
+      setState(() {
+        currentLocation = result.locationDetail ?? result.address ?? "未知位置";
+      });
+
+      // 💡 拿到中文地址后，立刻掐断定位，省电！
+      _locationPlugin.stopLocation();
+    });
+
+    await _locationPlugin.startLocation();
   }
 
   @override
@@ -97,7 +153,8 @@ class _EmergencyPageState extends State<EmergencyPage> with SingleTickerProvider
                   const SizedBox(height: 20),
                   Text("紧急求助已启动", style: TextStyle(color: Colors.white, fontSize: AppFonts.titleLarge, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 20),
-                  _buildInfoCard(icon: Icons.location_on, title: "实时位置已定位", subtitle: "北京市朝阳区建国路88号"),
+                  // 💡 替换为真实位置变量
+                  _buildInfoCard(icon: Icons.location_on, title: "实时位置已定位", subtitle: currentLocation),
                   const SizedBox(height: 20),
                   _buildContactSection(),
                   const SizedBox(height: 20),
