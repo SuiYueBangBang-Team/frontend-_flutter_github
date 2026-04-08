@@ -111,11 +111,13 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
   }
 
   //  真实接口：获取已绑定的长辈设备列表
-  Future<void> _fetchLocationData() async {
-    setState(() => isLoading = true);
-
+  //  isSilent 参数，用于控制是否显示转圈加载动画
+  Future<void> _fetchLocationData({bool isSilent = false}) async {
+// 💡只有在列表完全为空（首次进页面）时，才允许显示全屏的加载圈
+    if (boundDevices.isEmpty && !isSilent) {
+      setState(() => isLoading = true);
+    }
     try {
-      // 请求后端
       var response = await ApiClient().get('/api/location/all');
 
       if (response != null) {
@@ -125,11 +127,10 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
           boundDevices = list.map((e) => {
             "id": e['id'].toString(),
             "name": e['name'] ?? "未知设备",
-            "status": e['status'] ?? "离线",
-            // ✅ 替换为直接读取后端真实数据
-            "lat": e['lat'] ?? 30.5450, // 赋一个默认值兜底
+            // 💡 动态显示文字状态
+            "status": (e['isOnline'] == true) ? "在线" : "离线",
+            "lat": e['lat'] ?? 30.5450,
             "lng": e['lng'] ?? 114.3100,
-
             "battery": e['batteryLevel'] ?? 0,
             "volume": e['volumeLevel'] ?? 0,
             "isOnline": e['isOnline'] ?? false,
@@ -142,10 +143,11 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
       }
     } catch (e) {
       debugPrint("拉取设备列表失败: $e");
-      if (mounted) {
+      if (mounted && !isSilent) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("加载设备失败，请检查网络")));
       }
     } finally {
+      // 最终必须把 isLoading 归位
       if (mounted) setState(() => isLoading = false);
     }
   }
@@ -155,7 +157,8 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
     // 建议把频率降到 5-10 秒一次，避免后端接口压力过大
     _realtimeTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
       if (!mounted) return;
-
+      // 自动轮询时开启“静默刷新”，不再触发 isLoading，彻底解决页面跳动
+      _fetchLocationData(isSilent: true);
       // 1. 每隔一段时间，去后端拉取一次长辈的最新位置
       _fetchLocationData();
 
@@ -386,20 +389,34 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text("家庭设备", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                      // 💡 修复：把原来的单个加号按钮，改成 Row，包容刷新和添加两个按钮
+                      Row(
+                        children: [
+                          IconButton(
+                            onPressed: () {
+                              // 手动点击刷新时，采用带转圈动画的非静默刷新，给用户明确的反馈
+                              _fetchLocationData(isSilent: false);
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("设备状态已更新")));
+                            },
+                            icon: const Icon(Icons.refresh_rounded, size: 28, color: Colors.blueAccent),
+                          ),
                           IconButton(
                             onPressed: _showBindDeviceDialog, //  唤起真实绑定弹窗
                             icon: const Icon(Icons.add, size: 28, color: Colors.blueAccent),
                           ),
                         ],
                       ),
+                        ],
+                      ),
                     ),
+
+
                     const Divider(height: 1),
 
-                    if (isLoading)
+                    if (isLoading && boundDevices.isEmpty)
                       const Center(child: Padding(padding: EdgeInsets.all(30), child: CircularProgressIndicator()))
-                    else if (boundDevices.isEmpty)
+                    else if (!isLoading && boundDevices.isEmpty)
                       const Center(child: Padding(padding: EdgeInsets.all(40), child: Text("尚未绑定长辈设备", style: TextStyle(color: Colors.grey)))),
-
                     // 渲染设备列表
                     ...boundDevices.map((device) => _buildDeviceItem(device)),
 
@@ -426,6 +443,8 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
           return;
         }
         setState(() => selectedDeviceId = device['id']);
+      // setState 后立刻主动命令地图重绘所有大头针，实现图标秒切！
+        _updateMapOverlays();
 
         //  新增：点击长辈设备后，地图立刻平滑跳转到该长辈的经纬度位置
         if (myMapController != null) {
