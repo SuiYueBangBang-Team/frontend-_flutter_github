@@ -16,7 +16,6 @@ class _FamilyPageState extends State<FamilyPage> {
   @override
   void initState() {
     super.initState();
-    // 💡 页面一打开就拉取数据库的家人列表
     _fetchMembers();
   }
 
@@ -34,7 +33,7 @@ class _FamilyPageState extends State<FamilyPage> {
     }
   }
 
-  // 💡 乐观更新删除法
+  // 乐观更新删除法
   Future<void> _deleteMember(int index) async {
     var member = familyMembers[index];
     setState(() => familyMembers.removeAt(index)); // 先移除UI
@@ -69,7 +68,6 @@ class _FamilyPageState extends State<FamilyPage> {
             onPressed: () async {
               if (nameController.text.isEmpty || phoneController.text.isEmpty) return;
               try {
-                // 💡 真实请求：向数据库中插入家人记录
                 await ApiClient().post('/api/family/members', data: {
                   "name": nameController.text,
                   "phone": phoneController.text,
@@ -88,14 +86,11 @@ class _FamilyPageState extends State<FamilyPage> {
     );
   }
 
-  void _startVoiceCall(String name) => print("拨打语音：$name");
-  void _startVideoCall(String name) => print("拨打视频：$name");
-
   @override
   Widget build(BuildContext context) {
     return Container(
       color: const Color(0xFFF8FAFC),
-      child: RefreshIndicator( // 💡 支持下拉刷新
+      child: RefreshIndicator(
         onRefresh: _fetchMembers,
         child: isLoading && familyMembers.isEmpty
             ? const Center(child: CircularProgressIndicator())
@@ -146,47 +141,29 @@ class _FamilyPageState extends State<FamilyPage> {
     );
   }
 
+  // 💡 已清理：移除了底部的拨打电话 Row
   Widget _buildFamilyCard(int index, Map<String, dynamic> data) {
     return Container(
       margin: const EdgeInsets.only(bottom: 25),
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(30), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 10))]),
-      child: Column(
+      decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(30),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 10))]
+      ),
+      child: Row(
         children: [
-          Row(
+          const CircleAvatar(radius: 40, backgroundColor: Color(0xFFE2E8F0), child: Icon(Icons.person, size: 50, color: Colors.orange)),
+          const SizedBox(width: 20),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const CircleAvatar(radius: 40, backgroundColor: Color(0xFFE2E8F0), child: Icon(Icons.person, size: 50, color: Colors.orange)),
-              const SizedBox(width: 20),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(data['name'] ?? "", style: const TextStyle(fontSize: AppFonts.titleLarge, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
-                  const SizedBox(height: 4),
-                  Text(data['phone'] ?? "", style: const TextStyle(fontSize: AppFonts.bodyLarge, color: Color(0xFF64748B))),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 25),
-          Row(
-            children: [
-              Expanded(child: _buildCallButton(icon: Icons.phone_in_talk_rounded, label: "语音通话", color: const Color(0xFF00C853), onTap: () => _startVoiceCall(data['name']))),
-              const SizedBox(width: 15),
-              Expanded(child: _buildCallButton(icon: Icons.videocam_rounded, label: "视频通话", color: const Color(0xFF2979FF), onTap: () => _startVideoCall(data['name']))),
+              Text(data['name'] ?? "", style: const TextStyle(fontSize: AppFonts.titleLarge, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
+              const SizedBox(height: 4),
+              Text(data['phone'] ?? "", style: const TextStyle(fontSize: AppFonts.bodyLarge, color: Color(0xFF64748B))),
             ],
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildCallButton({required IconData icon, required String label, required Color color, required VoidCallback onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 15),
-        decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(20)),
-        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(icon, color: Colors.white, size: 28), const SizedBox(width: 8), Text(label, style: const TextStyle(color: Colors.white, fontSize: AppFonts.bodyMedium, fontWeight: FontWeight.bold))]),
       ),
     );
   }

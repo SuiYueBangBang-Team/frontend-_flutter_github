@@ -19,129 +19,138 @@ class _AvatarSelectionPageState extends State<AvatarSelectionPage> {
         return Scaffold(
           backgroundColor: const Color(0xFFF8FAFC),
           body: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Column(
-                children: [
-                  // --- 顶部区域：使用弹性间距 ---
-                  const Spacer(flex: 2),
-                  const FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text("您好，我是帮帮",
-                        style: TextStyle(
-                            fontSize: 32,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF1E293B))),
-                  ),
-                  const Text("很高兴认识您！",
-                      style: TextStyle(fontSize: 20, color: Colors.blueGrey)),
-
-                  const Spacer(flex: 2),
-
-                  // --- 形象选择标题 ---
-                  const Text("请选择您喜欢的帮帮形象",
-                      style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87)),
-                  const SizedBox(height: 15),
-
-                  // --- 💡 核心修复：形象选择区域 (不使用 GridView) ---
-                  Flexible(
-                    flex: 12, // 占据主要空间
-                    child: Column(
-                      children: [
-                        // 第一行
-                        Expanded(
-                          child: Row(
-                            children: [
-                              _buildAvatarItem(0),
-                              const SizedBox(width: 12),
-                              _buildAvatarItem(1),
-                              const SizedBox(width: 12),
-                              _buildAvatarItem(2),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        // 第二行
-                        Expanded(
-                          child: Row(
-                            children: [
-                              _buildAvatarItem(3),
-                              const SizedBox(width: 12),
-                              _buildAvatarItem(4),
-                              const SizedBox(width: 12),
-                              _buildAvatarItem(5),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const Spacer(flex: 2),
-
-                  // --- 语言选择部分 ---
-                  const Text("选择您习惯的语言",
-                      style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87)),
-                  const SizedBox(height: 12),
-
-                  Flexible(
-                    flex: 6,
-                    child: GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: UserProfileManager.languages.length,
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 3,
-                        mainAxisSpacing: 10,
-                        crossAxisSpacing: 10,
-                        childAspectRatio: 2.2, // 保持语言框较扁
+            child: SingleChildScrollView( // 💡 新增：包裹一个可滚动组件，防止小屏幕溢出
+              child: ConstrainedBox(
+                // 确保内容最少占满整个屏幕高度，如果内容过多则可以滚动
+                constraints: BoxConstraints(
+                  minHeight: MediaQuery.of(context).size.height -
+                      MediaQuery.of(context).padding.top -
+                      MediaQuery.of(context).padding.bottom,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly, // 改用 spaceEvenly 让元素均匀分布
+                    children: [
+                      // --- 顶部区域 ---
+                      const FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text("您好，我是帮帮",
+                            style: TextStyle(
+                                fontSize: 32,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF1E293B))),
                       ),
-                      itemBuilder: (context, index) {
-                        bool selected = userManager.languageIndex == index;
-                        return _buildLanguageItem(index, selected);
-                      },
-                    ),
-                  ),
+                      const SizedBox(height: 8),
+                      const Text("很高兴认识您！",
+                          style: TextStyle(fontSize: 20, color: Colors.blueGrey)),
 
-                  const Spacer(flex: 3),
+                      const SizedBox(height: 30),
 
-                  // --- 底部开始按钮 ---
-                  SizedBox(
-                    width: double.infinity,
-                    height: 65,
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pushNamed(context, "/home"),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blueAccent,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20)),
-                        elevation: 0,
-                      ),
-                      child: const FittedBox(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                      // --- 形象选择标题 ---
+                      const Text("请选择您喜欢的帮帮形象",
+                          style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87)),
+                      const SizedBox(height: 15),
+
+                      // --- 形象选择区域 ---
+                      // 去掉了 Flexible/Expanded，因为在 ScrollView 里它们需要明确的高度
+                      SizedBox(
+                        height: 220, // 💡 给定一个固定高度
+                        child: Column(
                           children: [
-                            Icon(Icons.check_circle_rounded,
-                                color: Colors.white, size: 24),
-                            SizedBox(width: 8),
-                            Text("开始使用帮帮助手",
-                                style: TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white)),
+                            // 第一行
+                            Expanded(
+                              child: Row(
+                                children: [
+                                  _buildAvatarItem(0),
+                                  const SizedBox(width: 12),
+                                  _buildAvatarItem(1),
+                                  const SizedBox(width: 12),
+                                  _buildAvatarItem(2),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            // 第二行
+                            Expanded(
+                              child: Row(
+                                children: [
+                                  _buildAvatarItem(3),
+                                  const SizedBox(width: 12),
+                                  _buildAvatarItem(4),
+                                  const SizedBox(width: 12),
+                                  _buildAvatarItem(5),
+                                ],
+                              ),
+                            ),
                           ],
                         ),
                       ),
-                    ),
+
+                      const SizedBox(height: 30),
+
+                      // --- 语言选择部分 ---
+                      const Text("选择您习惯的语言",
+                          style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87)),
+                      const SizedBox(height: 12),
+
+                      GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: UserProfileManager.languages.length,
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          mainAxisSpacing: 10,
+                          crossAxisSpacing: 10,
+                          childAspectRatio: 2.2,
+                        ),
+                        itemBuilder: (context, index) {
+                          bool selected = userManager.languageIndex == index;
+                          return _buildLanguageItem(index, selected);
+                        },
+                      ),
+
+                      const SizedBox(height: 40),
+
+                      // --- 底部开始按钮 ---
+                      SizedBox(
+                        width: double.infinity,
+                        height: 65,
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.pushNamed(context, "/home"),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blueAccent,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20)),
+                            elevation: 0,
+                          ),
+                          child: const FittedBox(
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.check_circle_rounded,
+                                    color: Colors.white, size: 24),
+                                SizedBox(width: 8),
+                                Text("开始使用帮帮助手",
+                                    style: TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                    ],
                   ),
-                  const SizedBox(height: 20),
-                ],
+                ),
               ),
             ),
           ),
@@ -150,7 +159,7 @@ class _AvatarSelectionPageState extends State<AvatarSelectionPage> {
     );
   }
 
-  // 💡 头像卡片：使用 LayoutBuilder 实现图标大小自适应压缩
+  // 头像卡片
   Widget _buildAvatarItem(int index) {
     bool selected = userManager.avatarIndex == index;
     final avatar = UserProfileManager.avatars[index];
@@ -175,7 +184,6 @@ class _AvatarSelectionPageState extends State<AvatarSelectionPage> {
             ],
           ),
           child: LayoutBuilder(builder: (context, constraints) {
-            // 根据当前卡片可用的最大高度，动态计算图标大小
             double iconBoxSize = constraints.maxHeight * 0.5;
             return Column(
               mainAxisAlignment: MainAxisAlignment.center,

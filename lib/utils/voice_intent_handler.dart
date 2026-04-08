@@ -74,9 +74,12 @@ class VoiceIntentHandler {
   };
 
   static Future<void> handle({String? action, Map<String, dynamic>? params}) async {
-    if (action == null) return;
+    if (action == null || action.isEmpty) return;
     final handler = _handlers[action];
-    if (handler == null) return;
+    if (handler == null) {
+      print('⚠️ VoiceIntentHandler: 未注册的动作: $action');
+      return;
+    }
     await handler(params ?? {});
   }
 
@@ -208,6 +211,8 @@ class VoiceIntentHandler {
     // 兜底：用 Deep Link / url_launcher 尝试
     final deepLinkMap = {
       '美团': ['imeituan://www.meituan.com/', 'market://details?id=com.sankuai.meituan'],
+      '今日头条': ['snssdk143://', 'sslocal://', 'market://details?id=com.ss.android.article.news'],
+      '头条': ['snssdk143://', 'sslocal://', 'market://details?id=com.ss.android.article.news'],
       '微信': ['weixin://'],
       '支付宝': ['alipay://'],
       '抖音': ['snssdk1128://'],

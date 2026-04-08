@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart'; // 💡 新增：用于调用相机
+import 'package:dio/dio.dart'; // 💡 新增：用于构建 FormData
 import 'package:phone_java/app_fonts.dart';
 import 'package:phone_java/utils/api_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -65,6 +67,83 @@ class _ChildSettingsPageState extends State<ChildSettingsPage> {
     );
   }
 
+  // 💡 唤起人脸录入流程 (弹窗选择长辈 -> 拍照上传)
+  Future<void> _handleFaceRegistration() async {
+    try {
+      // 1. 获取绑定的长辈列表
+      var res = await ApiClient().get('/api/family/members');
+      List<dynamic> members = res ?? [];
+
+      if (members.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("暂无绑定的长辈，请先添加家人")));
+        return;
+      }
+
+      if (!mounted) return;
+
+      // 2. 弹窗让子女选择要录入的长辈
+      var selectedMember = await showModalBottomSheet(
+          context: context,
+          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+          builder: (context) {
+            return SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: Text("选择要录入人脸的长辈", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  ),
+                  ...members.map((m) => ListTile(
+                    leading: const CircleAvatar(backgroundColor: Color(0xFFEFF6FF), child: Icon(Icons.person, color: Colors.blue)),
+                    title: Text(m['name']),
+                    subtitle: Text(m['phone'] ?? ''),
+                    trailing: const Icon(Icons.camera_alt, color: Colors.grey),
+                    onTap: () => Navigator.pop(context, m),
+                  )),
+                  const SizedBox(height: 10),
+                ],
+              ),
+            );
+          }
+      );
+
+      if (selectedMember == null) return; // 用户取消了选择
+
+      // 3. 唤起手机相机 (使用前置)
+      final picker = ImagePicker();
+      final XFile? image = await picker.pickImage(
+        source: ImageSource.camera,
+        preferredCameraDevice: CameraDevice.front,
+        imageQuality: 80,
+      );
+
+      if (image == null) return;
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("正在上传并录入长辈人脸...")));
+
+      // 4. 上传至后端
+      FormData formData = FormData.fromMap({
+        "file": await MultipartFile.fromFile(image.path, filename: "register_face.jpg"),
+        "memberId": selectedMember['id'], // 传入选择的长辈ID
+      });
+
+      await ApiClient().post('/api/family/face/register', data: formData);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("已成功为 [${selectedMember['name']}] 录入人脸！"), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("人脸录入失败: $e"), backgroundColor: Colors.red));
+      }
+    }
+  }
+
   Future<void> _handleLogout() async {
     try {
       await ApiClient().post('/api/auth/logout');
@@ -90,7 +169,7 @@ class _ChildSettingsPageState extends State<ChildSettingsPage> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 10, 20, 100), // 保持和父母端一致的边距
         children: [
-          // --- 1. 新增：个人信息卡片 (仿照图片UI) ---
+          // --- 1. 个人信息卡片 (仿照图片UI) ---
           _buildSettingCard(
             child: Column(
               children: [
@@ -141,7 +220,37 @@ class _ChildSettingsPageState extends State<ChildSettingsPage> {
           ),
           const SizedBox(height: 15),
 
-          // --- 2. 字体调整卡片 (与父母端一致) ---
+          // --- 2. 长辈关怀设置卡片 (💡 新增: 为长辈录入人脸入口) ---
+          _buildSettingCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.family_restroom_rounded, color: Colors.blueAccent, size: 32),
+                    const SizedBox(width: 12),
+                    Expanded(child: Text("长辈关怀设置", style: TextStyle(fontSize: AppFonts.titleLarge, fontWeight: FontWeight.bold))),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: Colors.orange.withOpacity(0.1), shape: BoxShape.circle),
+                    child: const Icon(Icons.face_retouching_natural_rounded, color: Colors.orange, size: 24),
+                  ),
+                  title: const Text("为长辈录入人脸", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  subtitle: const Text("协助长辈设置刷脸快捷登录"),
+                  trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 18, color: Colors.grey),
+                  onTap: () => _handleFaceRegistration(),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 15),
+
+          // --- 3. 字体调整卡片 (与父母端一致) ---
           ListenableBuilder(
             listenable: FontManager(),
             builder: (context, child) {
@@ -183,7 +292,7 @@ class _ChildSettingsPageState extends State<ChildSettingsPage> {
           ),
           const SizedBox(height: 15),
 
-          // --- 3. 个性化配置卡片 (与父母端完全一致，无护城河) ---
+          // --- 4. 个性化配置卡片 (与父母端完全一致，无护城河) ---
           ListenableBuilder(
             listenable: Listenable.merge([FontManager(), UserProfileManager()]),
             builder: (context, child) {
@@ -214,7 +323,7 @@ class _ChildSettingsPageState extends State<ChildSettingsPage> {
           ),
           const SizedBox(height: 15),
 
-          // --- 4. 退出登录 ---
+          // --- 5. 退出登录 ---
           _buildActionButton(label: "退出登录", icon: Icons.logout_rounded, color: Colors.redAccent, onTap: _handleLogout, isOutlined: true),
         ],
       ),

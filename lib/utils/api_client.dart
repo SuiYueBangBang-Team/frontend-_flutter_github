@@ -27,9 +27,19 @@ class ApiClient {
 
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) {
-        // 💡 2. 新增：如果用户已登录，自动把 userId 塞入所有的请求头中
-        if (globalToken != null && globalToken!.isNotEmpty) {
-          options.headers["Authorization"] = globalToken;
+        // 💡 2. 核心修复：白名单接口（免登录）绝对不能带上旧的/无效的 Token！
+        bool isAuthApi = options.path.contains('/api/auth/login') ||
+            options.path.contains('/api/auth/face-login') ||
+            options.path.contains('/api/auth/send-sms');
+
+        if (isAuthApi) {
+          // 确保请求头中干净，没有 Authorization
+          options.headers.remove('Authorization');
+        } else {
+          // 💡 其他正常的业务接口，如果用户已登录，自动把 Token 塞入所有的请求头中
+          if (globalToken != null && globalToken!.isNotEmpty) {
+            options.headers["Authorization"] = globalToken;
+          }
         }
 
         // print("➡️ 发起请求: ${options.method} ${options.path}");
@@ -75,9 +85,10 @@ class ApiClient {
     }
   }
 
-  Future<dynamic> post(String path, {dynamic data}) async {
+  Future<dynamic> post(String path, {dynamic data, Options? options}) async {
     try {
-      var response = await _dio.post(path, data: data);
+      // 支持传入自定义 options（比如强制覆盖 headers）
+      var response = await _dio.post(path, data: data, options: options);
       return _handleResponse(response);
     } catch (e) {
       rethrow;
