@@ -87,7 +87,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
     });
   }
 
-  /// 💡 真实调用相册并上传图片到后端
+  ///  真实调用相册并上传图片到后端
   uploadImage() async {
     final picker = ImagePicker();
     // 1. 唤起相册
@@ -120,7 +120,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
     }
   }
 
-  /// 💡 真实的发布帖子核心函数
+  ///  真实的发布帖子核心函数
   publishPost() async {
     if (contentController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("请输入帖子内容")));
@@ -231,7 +231,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
 
                     const SizedBox(height: 20),
 
-                    /// 💡 图片展示及上传按钮 (修复后可展示多图)
+                    ///  图片展示及上传按钮 (修复后可展示多图)
                     Wrap(
                       spacing: 10,
                       runSpacing: 10,

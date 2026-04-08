@@ -217,7 +217,7 @@ public class WeChatAutoService extends AccessibilityService {
                     break;
 
                 case STEP_CLICK_PANEL_VIDEO:
-                    // 💡 第5步：直接动用“无差别暴力穿透点击”
+                    //  第5步：直接动用“无差别暴力穿透点击”
                     if (forceClickPanelVideo()) {
                         Log.d(TAG, "【5】成功通过暴力穿透点击了 视频通话");
                         step = STEP_CLICK_POPUP_VOICE;

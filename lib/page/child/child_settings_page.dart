@@ -25,7 +25,7 @@ class _ChildSettingsPageState extends State<ChildSettingsPage> {
 
   Future<void> _loadUserInfo() async {
     final prefs = await SharedPreferences.getInstance();
-    // 💡 修复点：使用 ?? "" 兜底，防止出现 type 'Null' is not a subtype of type 'String' 的报错
+    //  修复点：使用 ?? "" 兜底，防止出现 type 'Null' is not a subtype of type 'String' 的报错
     setState(() {
       userPhone = prefs.getString('userPhone') ?? "未登录";
       nickname = prefs.getString('nickname') ?? "";
@@ -330,7 +330,7 @@ class _ChildSettingsPageState extends State<ChildSettingsPage> {
     );
   }
 
-  // 💡 完全沿用父母端的形象网格
+  //  完全沿用父母端的形象网格
   Widget _buildAvatarGrid() {
     return GridView.builder(
       shrinkWrap: true,
@@ -375,7 +375,7 @@ class _ChildSettingsPageState extends State<ChildSettingsPage> {
     );
   }
 
-  // 💡 完全沿用父母端的语言网格
+  //  完全沿用父母端的语言网格
   Widget _buildLanguageGrid() {
     return GridView.builder(
       shrinkWrap: true,
@@ -413,7 +413,7 @@ class _ChildSettingsPageState extends State<ChildSettingsPage> {
     );
   }
 
-  // 💡 完全沿用父母端的大边距卡片样式
+  //  完全沿用父母端的大边距卡片样式
   Widget _buildSettingCard({required Widget child}) {
     return Container(
       padding: const EdgeInsets.all(25),
@@ -426,7 +426,7 @@ class _ChildSettingsPageState extends State<ChildSettingsPage> {
     );
   }
 
-  // 💡 完全沿用父母端的大号按钮样式
+  //  完全沿用父母端的大号按钮样式
   Widget _buildActionButton({required String label, required IconData icon, required Color color, required VoidCallback onTap, bool isOutlined = false}) {
     return GestureDetector(
       onTap: onTap,

@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import '../app_fonts.dart';       // 💡 使用相对路径
-import '../utils/api_client.dart'; // 💡 引入请求客户端
+import '../app_fonts.dart';       //  使用相对路径
+import '../utils/api_client.dart'; //  引入请求客户端
 
 class EmergencyPage extends StatefulWidget {
   const EmergencyPage({super.key});
@@ -21,7 +21,7 @@ class _EmergencyPageState extends State<EmergencyPage> with SingleTickerProvider
   @override
   void initState() {
     super.initState();
-    // 💡 页面加载时自动获取家人作为紧急联系人
+    //  页面加载时自动获取家人作为紧急联系人
     _fetchEmergencyContacts();
     startTimer();
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:flutter_baidu_mapapi_base/flutter_baidu_mapapi_base.dart';
 // 工具类
 import 'package:phone_java/utils/api_client.dart';
 import 'app_fonts.dart';
@@ -15,20 +16,28 @@ import 'package:phone_java/page/onboarding/AvatarSelectionPage.dart';
 import 'index_page.dart';
 
 // 页面类 - 子女端主页
-// 💡 注意：请确保你已经按照之前的建议在 lib/page/child/ 目录下创建了该文件
+//  注意：请确保你已经按照之前的建议在 lib/page/child/ 目录下创建了该文件
 import 'package:phone_java/page/child/child_index_page.dart';
 
 import 'package:phone_java/page/child/child_create_post_page.dart';
 import 'package:phone_java/page/child/child_my_post_page.dart';
 
-// 💡 1. 全局 NavigatorKey
+//  1. 全局 NavigatorKey
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-// 💡 2. 定义全局初始路由变量
+//  2. 定义全局初始路由变量
 String initialRoute = '/';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  //  必须在调用任何接口前同意隐私政策
+  BMFMapSDK.setAgreePrivacy(true);
+
+  //  可以在 Dart 侧再次初始化 SDK（特别是兼容 iOS 平台），Android 平台也会以这里为主兜底
+  BMFMapSDK.setApiKeyAndCoordType(
+      'gOk4AIifU6VZZTRrwxoMlWOXyjt1DCPX', BMF_COORD_TYPE.BD09LL);
+
 
   // 1. 读取本地缓存
   final prefs = await SharedPreferences.getInstance();
@@ -40,7 +49,7 @@ Future<void> main() async {
     // 将读取到的 token 赋值给 ApiClient，这样后续的网络请求都会自动带上头信息
     ApiClient.globalToken = savedToken;
 
-    // 💡 核心逻辑：自动登录时，根据角色决定去哪个主页
+    //  核心逻辑：自动登录时，根据角色决定去哪个主页
     if (savedRole == 'CHILD') {
       initialRoute = '/child_index'; // 跳转到子女端主页
     } else {
@@ -59,7 +68,7 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 💡 使用 ListenableBuilder 监听 FontManager 实现全局字体缩放
+    //  使用 ListenableBuilder 监听 FontManager 实现全局字体缩放
     return ListenableBuilder(
       listenable: FontManager(),
       builder: (context, child) {
@@ -73,7 +82,7 @@ class MyApp extends StatelessWidget {
             fontFamily: 'PingFang SC',
           ),
 
-          // 💡 核心拦截器：通过 MediaQuery 实现全局比例缩放
+          //  核心拦截器：通过 MediaQuery 实现全局比例缩放
           builder: (context, widget) {
             return MediaQuery(
               data: MediaQuery.of(context).copyWith(
@@ -83,7 +92,7 @@ class MyApp extends StatelessWidget {
             );
           },
 
-          // 💡 使用动态确定的初始路由
+          //  使用动态确定的初始路由
           initialRoute: initialRoute,
 
           routes: {
@@ -99,7 +108,7 @@ class MyApp extends StatelessWidget {
             // 子女端专属
             '/child_index': (context) => const ChildIndexPage(),
 
-            // 💡 新增：社区相关路由
+            //  新增：社区相关路由
             '/createPostPage': (context) => const CreatePostPage(),
             '/myPostPage': (context) => const MyPostPage(),
           },

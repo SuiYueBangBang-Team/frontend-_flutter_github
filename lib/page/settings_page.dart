@@ -13,7 +13,7 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   Future<void> _handleLogout() async {
-    // 💡 1. 新增：通知后端销毁 Redis 中的 Token
+    //  1. 新增：通知后端销毁 Redis 中的 Token
     try {
       await ApiClient().post('/api/auth/logout');
     } catch (e) {
@@ -21,7 +21,7 @@ class _SettingsPageState extends State<SettingsPage> {
       print("退出接口调用异常: $e");
     }
 
-    // 💡 2. 彻底清理缓存和内存
+    //  2. 彻底清理缓存和内存
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('token');
     await prefs.remove('userId');
@@ -29,7 +29,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
     ApiClient.globalToken = null;
 
-    // 💡 3. 返回登录页
+    //  3. 返回登录页
     if (mounted) {
       Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
     }
@@ -125,13 +125,13 @@ class _SettingsPageState extends State<SettingsPage> {
                     const SizedBox(height: 20),
                     Text("选择帮帮形象", style: TextStyle(fontSize: AppFonts.bodyLarge, fontWeight: FontWeight.bold, color: Colors.black87)),
                     const SizedBox(height: 10),
-                    // 💡 调整点：去掉网格自带的边距
+                    //  调整点：去掉网格自带的边距
                     _buildAvatarGrid(),
 
                     const SizedBox(height: 10), // 紧凑处理
                     Text("选择帮帮语言", style: TextStyle(fontSize: AppFonts.bodyLarge, fontWeight: FontWeight.bold, color: Colors.black87)),
                     const SizedBox(height: 10),
-                    // 💡 调整点：去掉网格自带的边距
+                    //  调整点：去掉网格自带的边距
                     _buildLanguageGrid(),
                   ],
                 ),
@@ -212,11 +212,11 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  // 💡 重点修改：设置 padding 为 EdgeInsets.zero
+  //  重点修改：设置 padding 为 EdgeInsets.zero
   Widget _buildAvatarGrid() {
     return GridView.builder(
       shrinkWrap: true,
-      padding: EdgeInsets.zero, // 💡 强制去除护城河
+      padding: EdgeInsets.zero, //  强制去除护城河
       physics: const NeverScrollableScrollPhysics(),
       itemCount: UserProfileManager.avatars.length,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -254,11 +254,11 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  // 💡 重点修改：设置 padding 为 EdgeInsets.zero
+  //  重点修改：设置 padding 为 EdgeInsets.zero
   Widget _buildLanguageGrid() {
     return GridView.builder(
       shrinkWrap: true,
-      padding: EdgeInsets.zero, // 💡 强制去除护城河
+      padding: EdgeInsets.zero, //  强制去除护城河
       physics: const NeverScrollableScrollPhysics(),
       itemCount: UserProfileManager.languages.length,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(

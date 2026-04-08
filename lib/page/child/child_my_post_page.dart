@@ -142,7 +142,7 @@ class _MyPostPageState extends State<MyPostPage> {
               leading: CircleAvatar(
                 radius: 26,
                 backgroundColor: Colors.grey.shade200,
-                // 💡 彻底废弃本地图片兜底
+                //  彻底废弃本地图片兜底
                 backgroundImage: avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
                 child: avatarUrl.isEmpty ? const Icon(Icons.person, color: Colors.grey, size: 30) : null,
               ),

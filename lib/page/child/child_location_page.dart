@@ -1,7 +1,15 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import 'dart:math';
-import '../../utils/api_client.dart'; // 💡 引入真实请求客户端
+import '../../utils/api_client.dart'; //  引入真实请求客户端
+
+//  引入基础地图库与工具
+import 'package:flutter_baidu_mapapi_base/flutter_baidu_mapapi_base.dart'; //
+import 'package:flutter_baidu_mapapi_map/flutter_baidu_mapapi_map.dart'; //
+
+//  使用这个标准的包引入，它完美兼容最新版的所有接口
+import 'package:flutter_bmflocation/flutter_bmflocation.dart';
+import 'package:permission_handler/permission_handler.dart'; // 用于申请定位权限
+
 
 class ChildLocationPage extends StatefulWidget {
   const ChildLocationPage({super.key});
@@ -13,12 +21,75 @@ class ChildLocationPage extends StatefulWidget {
 class _ChildLocationPageState extends State<ChildLocationPage> {
   List<Map<String, dynamic>> boundDevices = [];
   bool isLoading = true;
-  bool _isTrackingLocked = false;
   String? selectedDeviceId;
+  //  新增：百度地图控制器
+  BMFMapController? myMapController;
+
+  // 初始化定位插件类
+  final LocationFlutterPlugin _locationPlugin = LocationFlutterPlugin(); //
+  bool _isFirstLocation = true; // 用于首次定位时移动地图视角
+
+// 请求定位权限
+  Future<void> _requestPermissionAndLocate() async {
+    PermissionStatus status = await Permission.location.request();
+    if (status.isGranted) {
+      _initLocation();
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("需要定位权限才能显示您的当前位置")));
+      }
+    }
+  }
+
+  // 初始化并开启真实定位
+  void _initLocation() async {
+    try {
+      debugPrint("📌 定位流程 1: 正在设置隐私政策...");
+      _locationPlugin.setAgreePrivacy(true);
+
+      debugPrint("📌 定位流程 2: 正在初始化参数...");
+      BaiduLocationAndroidOption androidOption = BaiduLocationAndroidOption(
+        locationMode: BMFLocationMode.hightAccuracy,
+        isNeedAddress: true,
+        openGps: true,
+        coordType: BMFLocationCoordType.bd09ll,
+        scanspan: 4000,
+      );
+      await _locationPlugin.prepareLoc(androidOption.getMap(), {});
+
+      debugPrint("📌 定位流程 3: 正在注册定位回调...");
+      _locationPlugin.seriesLocationCallback(callback: (BaiduLocation result) {
+        //  无论成功失败，只要百度给回应了，就会打印这句话
+        debugPrint("📍 百度定位回调到达! 错误码=${result.errorCode}, 经度=${result.longitude}, 纬度=${result.latitude}");
+
+        if (!mounted) return;
+        if (result.latitude != null && result.longitude != null && result.latitude! > 1.0) {
+          setState(() {
+            myLocation['lat'] = result.latitude!;
+            myLocation['lng'] = result.longitude!;
+          });
+          _updateMapOverlays();
+          if (_isFirstLocation && myMapController != null) {
+            myMapController?.setCenterCoordinate(
+                BMFCoordinate(result.latitude!, result.longitude!), true);
+            _isFirstLocation = false;
+          }
+        }
+      });
+
+      debugPrint("📌 定位流程 4: 发送启动定位指令...");
+      await _locationPlugin.startLocation();
+      debugPrint("📌 定位流程 5: 启动指令发送成功，等待百度回调...");
+
+    } catch (e) {
+      debugPrint("❌ 定位流程发生异常: $e");
+    }
+  }
 
   Map<String, double> myLocation = {
-    "lat": 30.5450,
-    "lng": 114.3100,
+    "lat": 23.27491548663772,
+    "lng": 112.68073532165043, //BD09(百度坐标系)，本校
   };
 
   Timer? _realtimeTimer;
@@ -26,23 +97,28 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
   @override
   void initState() {
     super.initState();
-    _fetchLocationData(); // 💡 页面初始化时拉取真实设备列表
+    _fetchLocationData();
+    _requestPermissionAndLocate(); // 启动真实定位
     _startRealtimeTracking();
   }
 
   @override
   void dispose() {
     _realtimeTimer?.cancel();
+    // 停止定位，防止内存泄漏
+    _locationPlugin.stopLocation(); // [cite: 20]
     super.dispose();
   }
 
-  // 💡 真实接口：获取已绑定的长辈设备列表
-  Future<void> _fetchLocationData() async {
-    setState(() => isLoading = true);
-
+  //  真实接口：获取已绑定的长辈设备列表
+  //  isSilent 参数，用于控制是否显示转圈加载动画
+  Future<void> _fetchLocationData({bool isSilent = false}) async {
+// 💡只有在列表完全为空（首次进页面）时，才允许显示全屏的加载圈
+    if (boundDevices.isEmpty && !isSilent) {
+      setState(() => isLoading = true);
+    }
     try {
-      // 请求后端 /api/family/devices
-      var response = await ApiClient().get('/api/family/devices');
+      var response = await ApiClient().get('/api/location/all');
 
       if (response != null) {
         List<dynamic> list = response is List ? response : (response['data'] ?? []);
@@ -51,11 +127,10 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
           boundDevices = list.map((e) => {
             "id": e['id'].toString(),
             "name": e['name'] ?? "未知设备",
-            "status": e['status'] ?? "离线",
-            // ⚠️ 注意：目前后端 DeviceVO 尚未提供真实的经纬度，这里先随机生成偏移坐标，以免地图报错。
-            // 未来后端增加了 lat/lng 后，直接替换为 e['lat'] 即可。
-            "lat": 30.5450 + (Random().nextDouble() - 0.5) * 0.01,
-            "lng": 114.3100 + (Random().nextDouble() - 0.5) * 0.01,
+            // 💡 动态显示文字状态
+            "status": (e['isOnline'] == true) ? "在线" : "离线",
+            "lat": e['lat'] ?? 30.5450,
+            "lng": e['lng'] ?? 114.3100,
             "battery": e['batteryLevel'] ?? 0,
             "volume": e['volumeLevel'] ?? 0,
             "isOnline": e['isOnline'] ?? false,
@@ -68,34 +143,59 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
       }
     } catch (e) {
       debugPrint("拉取设备列表失败: $e");
-      if (mounted) {
+      if (mounted && !isSilent) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("加载设备失败，请检查网络")));
       }
     } finally {
+      // 最终必须把 isLoading 归位
       if (mounted) setState(() => isLoading = false);
     }
   }
 
-  // 💡 模拟坐标跳动 (保留原有功能)
-  void _startRealtimeTracking() {
-    _realtimeTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
-      if (!mounted) return;
-      setState(() {
-        myLocation['lat'] = myLocation['lat']! + 0.0001;
-        myLocation['lng'] = myLocation['lng']! + 0.00005;
 
-        for (var device in boundDevices) {
-          // 仅模拟在线设备的轻微移动
-          if (device['isOnline'] == true) {
-            device['lat'] += (Random().nextDouble() - 0.5) * 0.0002;
-            device['lng'] += (Random().nextDouble() - 0.5) * 0.0002;
-          }
-        }
-      });
+  void _startRealtimeTracking() {
+    // 建议把频率降到 5-10 秒一次，避免后端接口压力过大
+    _realtimeTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
+      if (!mounted) return;
+      // 自动轮询时开启“静默刷新”，不再触发 isLoading，彻底解决页面跳动
+      _fetchLocationData(isSilent: true);
+      // 1. 每隔一段时间，去后端拉取一次长辈的最新位置
+      _fetchLocationData();
+
+
     });
   }
 
-  // 💡 真实接口：绑定设备弹窗
+
+//  核心新增：绘制真实地图覆盖物
+  void _updateMapOverlays() {
+    if (myMapController == null) return;
+    myMapController?.cleanAllMarkers(); // 清除旧图标
+
+    // 1. 绘制“我”的位置
+    BMFMarker myMarker = BMFMarker(
+      position: BMFCoordinate(myLocation['lat']!, myLocation['lng']!),
+      title: "我的位置",
+      // ⚠️ 必须提供本地资源图作 Marker
+      icon: "assets/icons/my_location.png",
+    );
+    myMapController?.addMarker(myMarker);
+
+    // 2. 绘制长辈设备的位置
+    for (var device in boundDevices) {
+      if (device['isOnline'] == true) {
+        bool isSelected = selectedDeviceId == device['id'];
+        BMFMarker deviceMarker = BMFMarker(
+          position: BMFCoordinate(device['lat']!, device['lng']!),
+          title: device['name'],
+          icon: isSelected ? "assets/icons/device_selected.png" : "assets/icons/device_normal.png",
+        );
+        myMapController?.addMarker(deviceMarker);
+      }
+    }
+  }
+
+  //  真实接口：绑定设备弹窗
   void _showBindDeviceDialog() {
     final TextEditingController phoneController = TextEditingController();
     final TextEditingController codeController = TextEditingController();
@@ -138,7 +238,7 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
                           )
                       ),
                       const SizedBox(width: 10),
-                      // 💡 发送验证码按钮
+                      //  发送验证码按钮
                       SizedBox(
                         height: 55,
                         child: ElevatedButton(
@@ -180,7 +280,7 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
               ),
               actions: [
                 TextButton(onPressed: () => Navigator.pop(context), child: const Text("取消")),
-                // 💡 确认绑定按钮
+                //  确认绑定按钮
                 ElevatedButton(
                   onPressed: isBinding ? null : () async {
                     if (phoneController.text.isEmpty || codeController.text.isEmpty) {
@@ -234,18 +334,19 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
             right: 16,
             child: Column(
               children: [
+                // 仅保留定位按钮，并修改为固定图标与直接跳转逻辑
                 _buildMapControlButton(
-                  icon: Icons.layers_rounded,
-                  onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("切换地图图层"))),
-                ),
-                const SizedBox(height: 12),
-                _buildMapControlButton(
-                  icon: _isTrackingLocked ? Icons.navigation_rounded : Icons.near_me_outlined,
-                  color: _isTrackingLocked ? Colors.blueAccent : Colors.black87,
+                  icon: Icons.near_me, // 使用固定图标
+                  color: Colors.black87, // 固定颜色，取消原有的蓝色激活状态
                   onTap: () {
-                    setState(() {
-                      _isTrackingLocked = !_isTrackingLocked;
-                    });
+                    // 新增：点击时先强制触发一次状态更新，并重新绘制地图上的标记点
+                    setState(() {});
+                    _updateMapOverlays();
+                    // 点击立即回到“我的位置”
+                    if (myMapController != null && myLocation['lat'] != null) {
+                      myMapController?.setCenterCoordinate(
+                          BMFCoordinate(myLocation['lat']!, myLocation['lng']!), true);
+                    }
                   },
                 ),
               ],
@@ -288,20 +389,34 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text("家庭设备", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                      // 💡 修复：把原来的单个加号按钮，改成 Row，包容刷新和添加两个按钮
+                      Row(
+                        children: [
                           IconButton(
-                            onPressed: _showBindDeviceDialog, // 💡 唤起真实绑定弹窗
+                            onPressed: () {
+                              // 手动点击刷新时，采用带转圈动画的非静默刷新，给用户明确的反馈
+                              _fetchLocationData(isSilent: false);
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("设备状态已更新")));
+                            },
+                            icon: const Icon(Icons.refresh_rounded, size: 28, color: Colors.blueAccent),
+                          ),
+                          IconButton(
+                            onPressed: _showBindDeviceDialog, //  唤起真实绑定弹窗
                             icon: const Icon(Icons.add, size: 28, color: Colors.blueAccent),
                           ),
                         ],
                       ),
+                        ],
+                      ),
                     ),
+
+
                     const Divider(height: 1),
 
-                    if (isLoading)
+                    if (isLoading && boundDevices.isEmpty)
                       const Center(child: Padding(padding: EdgeInsets.all(30), child: CircularProgressIndicator()))
-                    else if (boundDevices.isEmpty)
+                    else if (!isLoading && boundDevices.isEmpty)
                       const Center(child: Padding(padding: EdgeInsets.all(40), child: Text("尚未绑定长辈设备", style: TextStyle(color: Colors.grey)))),
-
                     // 渲染设备列表
                     ...boundDevices.map((device) => _buildDeviceItem(device)),
 
@@ -328,6 +443,14 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
           return;
         }
         setState(() => selectedDeviceId = device['id']);
+      // setState 后立刻主动命令地图重绘所有大头针，实现图标秒切！
+        _updateMapOverlays();
+
+        //  新增：点击长辈设备后，地图立刻平滑跳转到该长辈的经纬度位置
+        if (myMapController != null) {
+          myMapController?.setCenterCoordinate(
+              BMFCoordinate(device['lat']!, device['lng']!), true);
+        }
       },
       child: Container(
         color: isSelected ? Colors.blue.withOpacity(0.05) : Colors.transparent,
@@ -384,101 +507,48 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
     );
   }
 
-  // 悬浮按钮组件
+  /// 悬浮按钮组件 (已增加点击水波纹动效)
   Widget _buildMapControlButton({required IconData icon, required VoidCallback onTap, Color color = Colors.black87}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 48, height: 48,
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 10, offset: const Offset(0, 4))]),
-        child: Icon(icon, color: color, size: 26),
-      ),
-    );
-  }
-
-  // 🗺️ 地图图层 (仅供展示)
-  Widget _buildMapLayer() {
     return Container(
-      width: double.infinity, height: double.infinity,
-      color: const Color(0xFFF1F0EA),
-      child: Stack(
-        children: [
-          CustomPaint(size: Size.infinite, painter: _FakeMapPainter()),
-
-          AnimatedPositioned(
-            duration: const Duration(seconds: 2),
-            curve: Curves.linear,
-            top: 400 - (myLocation['lat']! - 30.54) * 10000,
-            left: 150 + (myLocation['lng']! - 114.30) * 10000,
-            child: Column(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(color: Colors.blueAccent, borderRadius: BorderRadius.circular(12), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 5)]),
-                  child: const Text("我的位置", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
-                ),
-                const SizedBox(height: 5),
-                Container(
-                  width: 24, height: 24,
-                  decoration: BoxDecoration(color: Colors.blue, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 3), boxShadow: const [BoxShadow(color: Colors.blueAccent, blurRadius: 10)]),
-                ),
-              ],
-            ),
-          ),
-
-          ...boundDevices.where((d) => d['isOnline']).map((device) {
-            bool isSelected = selectedDeviceId == device['id'];
-            double lat = (device['lat'] ?? 0.0).toDouble();
-            double lng = (device['lng'] ?? 0.0).toDouble();
-
-            double top = 400 - (lat - 30.54) * 10000;
-            double left = 150 + (lng - 114.30) * 10000;
-
-            return AnimatedPositioned(
-              duration: const Duration(seconds: 2),
-              curve: Curves.linear,
-              top: top, left: left,
-              child: Column(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: isSelected ? Colors.green : Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 5)],
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CircleAvatar(radius: 10, backgroundColor: isSelected ? Colors.white : Colors.green, child: Icon(Icons.person, size: 14, color: isSelected ? Colors.green : Colors.white)),
-                        const SizedBox(width: 6),
-                        Text(device['name'], style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: isSelected ? Colors.white : Colors.black87)),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Icon(Icons.location_on, color: isSelected ? Colors.green : Colors.grey, size: isSelected ? 48 : 40),
-                ],
-              ),
-            );
-          }).toList(),
-        ],
+      width: 48, height: 48,
+      decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 10, offset: const Offset(0, 4))]
+      ),
+      //  使用 Material 和 InkWell 包裹 Icon，实现原生的点击水波纹动效
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Icon(icon, color: color, size: 26),
+        ),
       ),
     );
   }
-}
 
-class _FakeMapPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = Colors.white..strokeWidth = 8..style = PaintingStyle.stroke;
-    final path = Path();
-    path.moveTo(0, size.height * 0.4);
-    path.quadraticBezierTo(size.width * 0.5, size.height * 0.5, size.width, size.height * 0.3);
-    path.moveTo(size.width * 0.3, 0);
-    path.lineTo(size.width * 0.4, size.height);
-    canvas.drawPath(path, paint);
+// 🗺️ 替换为真实的地图图层 Widget
+  Widget _buildMapLayer() {
+    //  构造包含了中心点坐标、缩放级别以及预留边界等状态参数的地图选项
+    BMFMapOptions mapOptions = BMFMapOptions(
+        center: BMFCoordinate(myLocation['lat']!, myLocation['lng']!),
+        zoomLevel: 15,
+        mapPadding: BMFEdgeInsets(left: 0, top: 0, right: 0, bottom: 0)); //
+
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      color: const Color(0xFFF1F0EA),
+      //  BMFMapWidget 替代旧版 FakePainter
+      child: BMFMapWidget(
+        onBMFMapCreated: (controller) {
+          myMapController = controller;
+          _updateMapOverlays(); // 地图初始化完毕，立刻执行一次标注绘制
+        },
+        mapOptions: mapOptions, //
+      ),
+    );
   }
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

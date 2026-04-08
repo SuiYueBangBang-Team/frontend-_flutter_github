@@ -10,7 +10,7 @@ class ChildHealthPage extends StatefulWidget {
 }
 
 class _ChildHealthPageState extends State<ChildHealthPage> {
-  // 💡 已彻底移除 _isDebugMode 假数据拦截，强制走真实后端
+  //  已彻底移除 _isDebugMode 假数据拦截，强制走真实后端
 
   List<Map<String, dynamic>> parentMeds = []; // 长辈的用药数据
   List<Map<String, dynamic>> myReminders = []; // 子女自己的提醒数据
@@ -23,7 +23,7 @@ class _ChildHealthPageState extends State<ChildHealthPage> {
     _fetchHealthData();
   }
 
-  // 💡 获取真实后端数据
+  //  获取真实后端数据
   Future<void> _fetchHealthData() async {
     setState(() => isLoading = true);
 
@@ -66,7 +66,7 @@ class _ChildHealthPageState extends State<ChildHealthPage> {
     }
   }
 
-  // 💡 一键提醒 (给长辈发推送)
+  //  一键提醒 (给长辈发推送)
   Future<void> _sendOneClickReminder() async {
     // 检查是否有未吃的药
     bool hasUntaken = parentMeds.any((med) => !(med['isTaken'] ?? false));
@@ -85,7 +85,7 @@ class _ChildHealthPageState extends State<ChildHealthPage> {
     }
   }
 
-  // 💡 子女帮长辈删除用药
+  //  子女帮长辈删除用药
   Future<void> _deleteParentMed(int index) async {
     var med = parentMeds[index];
     setState(() => parentMeds.removeAt(index));
@@ -99,7 +99,7 @@ class _ChildHealthPageState extends State<ChildHealthPage> {
     }
   }
 
-  // 💡 子女删除自己的提醒
+  //  子女删除自己的提醒
   Future<void> _deleteMyReminder(int index) async {
     var rem = myReminders[index];
     setState(() => myReminders.removeAt(index));
@@ -112,7 +112,7 @@ class _ChildHealthPageState extends State<ChildHealthPage> {
     }
   }
 
-  // 💡 子女帮长辈添加用药
+  //  子女帮长辈添加用药
   void _showAddParentMedDialog() {
     TextEditingController nameController = TextEditingController();
     TextEditingController doseController = TextEditingController();
@@ -174,7 +174,7 @@ class _ChildHealthPageState extends State<ChildHealthPage> {
     );
   }
 
-  // 💡 添加子女专属提醒
+  //  添加子女专属提醒
   void _showAddMyReminderDialog() {
     TextEditingController contentController = TextEditingController();
     TextEditingController timeController = TextEditingController();
@@ -322,7 +322,7 @@ class _ChildHealthPageState extends State<ChildHealthPage> {
   Widget _buildParentMedItem(Map<String, dynamic> data) {
     bool isTaken = data['isTaken'] ?? false;
 
-    // 💡 修复：后端返回的字段叫 timeStr，如果为空则兜底显示未知时间
+    //  修复：后端返回的字段叫 timeStr，如果为空则兜底显示未知时间
     String timeDisplay = data['timeStr'] ?? data['time'] ?? '未知时间';
 
     return Container(

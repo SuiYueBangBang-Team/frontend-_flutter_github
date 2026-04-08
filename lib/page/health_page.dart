@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'dart:async'; // 💡 引入定时器库
+import 'dart:async'; //  引入定时器库
 import '../app_fonts.dart';
 import '../utils/api_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -16,7 +16,7 @@ class _HealthPageState extends State<HealthPage> {
   List<Map<String, dynamic>> reminders = [];
   bool isLoading = true;
 
-  // 💡 轮询提醒核心变量
+  //  轮询提醒核心变量
   Timer? _pollingTimer;
   int _lastRemindCount = -1; // -1 表示尚未初始化
 
@@ -25,7 +25,7 @@ class _HealthPageState extends State<HealthPage> {
     super.initState();
     _fetchHealthData();
 
-    // 💡 开启定时器，每 5 秒去后端查一次是否有新提醒
+    //  开启定时器，每 5 秒去后端查一次是否有新提醒
     _pollingTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
       _checkReminders();
     });
@@ -33,11 +33,11 @@ class _HealthPageState extends State<HealthPage> {
 
   @override
   void dispose() {
-    _pollingTimer?.cancel(); // 💡 退出页面时务必销毁定时器，防止内存泄漏
+    _pollingTimer?.cancel(); //  退出页面时务必销毁定时器，防止内存泄漏
     super.dispose();
   }
 
-  // 2. 💡 替换原来的 _checkReminders 方法
+  // 2.  替换原来的 _checkReminders 方法
   Future<void> _checkReminders() async {
     try {
       var response = await ApiClient().get('/api/family/medications/remind_count');
@@ -59,7 +59,7 @@ class _HealthPageState extends State<HealthPage> {
         // 1️⃣ 第一次打开APP / 退出重登后缓存被清空
         await prefs.setInt('elder_remind_count', currentCount);
 
-        // 💡 核心修复：如果退出重登后发现后端有未读的提醒(大于0)，直接弹窗！不再吞掉！
+        //  核心修复：如果退出重登后发现后端有未读的提醒(大于0)，直接弹窗！不再吞掉！
         if (currentCount > 0) {
           // print("【长辈端轮询】🚨 刚登录发现未读的提醒！立刻触发弹窗！");
           _showElderWarningDialog();
@@ -74,7 +74,7 @@ class _HealthPageState extends State<HealthPage> {
         _showElderWarningDialog();
 
       } else if (currentCount < savedCount) {
-        // 3️⃣ 💡 隐藏Bug修复：如果到了第二天后端Redis清零了，本地必须同步归零！
+        // 3️⃣  隐藏Bug修复：如果到了第二天后端Redis清零了，本地必须同步归零！
         // 否则 1 < 15 永远不成立，第二天再也收不到提醒了！
         await prefs.setInt('elder_remind_count', currentCount);
         // print("【长辈端轮询】🔄 新的一天，后端次数已重置，本地同步归零！");
@@ -85,7 +85,7 @@ class _HealthPageState extends State<HealthPage> {
     }
   }
 
-  // 💡 专属长辈的强提醒弹窗
+  //  专属长辈的强提醒弹窗
   void _showElderWarningDialog() {
     showDialog(
       context: context,
@@ -122,11 +122,11 @@ class _HealthPageState extends State<HealthPage> {
     );
   }
 
-  // 💡 获取健康数据
+  //  获取健康数据
   Future<void> _fetchHealthData() async {
     setState(() => isLoading = true);
     try {
-      // 💡 修复：路径修改为与后端一致的 /api/family/medications/today
+      //  修复：路径修改为与后端一致的 /api/family/medications/today
       var medsData = await ApiClient().get('/api/family/medications/today');
       var remsData = await ApiClient().get('/api/health/reminders'); // 假设提醒的接口没变
       setState(() {
@@ -140,7 +140,7 @@ class _HealthPageState extends State<HealthPage> {
     }
   }
 
-  // 💡 切换吃药状态
+  //  切换吃药状态
   Future<void> _toggleMedStatus(int index) async {
     var med = todayMeds[index];
     bool currentStatus = med['isTaken'] ?? false;
@@ -149,7 +149,7 @@ class _HealthPageState extends State<HealthPage> {
     setState(() => todayMeds[index]['isTaken'] = !currentStatus);
 
     try {
-      // 💡 注意：如果你后端没有写这个 put 接口，这里请求会报错但UI会自己恢复
+      //  注意：如果你后端没有写这个 put 接口，这里请求会报错但UI会自己恢复
       await ApiClient().put('/api/health/medications/$id/status', data: {
         "isTaken": !currentStatus
       });
@@ -159,12 +159,12 @@ class _HealthPageState extends State<HealthPage> {
     }
   }
 
-  // 💡 删除用药
+  //  删除用药
   Future<void> _deleteMed(int index) async {
     var med = todayMeds[index];
     setState(() => todayMeds.removeAt(index));
     try {
-      // 💡 修复：路径修改为与后端一致的 /api/family/medications/
+      //  修复：路径修改为与后端一致的 /api/family/medications/
       await ApiClient().delete('/api/family/medications/${med['id']}');
     } catch (e) {
       setState(() => todayMeds.insert(index, med));
@@ -172,7 +172,7 @@ class _HealthPageState extends State<HealthPage> {
     }
   }
 
-  // 💡 删除提醒
+  //  删除提醒
   Future<void> _deleteReminder(int index) async {
     var rem = reminders[index];
     setState(() => reminders.removeAt(index));
@@ -184,7 +184,7 @@ class _HealthPageState extends State<HealthPage> {
     }
   }
 
-  // 💡 添加用药记录弹窗
+  //  添加用药记录弹窗
   void _showAddMedDialog() {
     TextEditingController nameController = TextEditingController();
     TextEditingController doseController = TextEditingController();
@@ -239,7 +239,7 @@ class _HealthPageState extends State<HealthPage> {
                 return;
               }
               try {
-                // 💡 修复：路径修改为与后端一致的 /api/family/medications
+                //  修复：路径修改为与后端一致的 /api/family/medications
                 await ApiClient().post('/api/family/medications', data: {
                   "name": nameController.text,
                   "dose": doseController.text,
@@ -258,7 +258,7 @@ class _HealthPageState extends State<HealthPage> {
     );
   }
 
-  // 💡 添加提醒事项弹窗
+  //  添加提醒事项弹窗
   void _showAddReminderDialog() {
     TextEditingController contentController = TextEditingController();
     TextEditingController timeController = TextEditingController();
@@ -422,7 +422,7 @@ class _HealthPageState extends State<HealthPage> {
 
   Widget _buildMedItem(int index, Map<String, dynamic> data) {
     bool isTaken = data['isTaken'] ?? false;
-    // 💡 修复：后端返回的是 timeStr，防止为 null
+    //  修复：后端返回的是 timeStr，防止为 null
     String timeDisplay = data['timeStr'] ?? data['time'] ?? '未知时间';
 
     return Container(

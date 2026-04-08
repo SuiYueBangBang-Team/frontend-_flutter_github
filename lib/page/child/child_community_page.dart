@@ -295,7 +295,7 @@ class _ChildCommunityPageState extends State<ChildCommunityPage> {
               leading: CircleAvatar(
                 radius: 26,
                 backgroundColor: Colors.grey.shade200,
-                // 💡 彻底抛弃本地图片，改用内置 Icon 兜底
+                //  彻底抛弃本地图片，改用内置 Icon 兜底
                 backgroundImage: displayAvatarUrl.isNotEmpty ? NetworkImage(displayAvatarUrl) : null,
                 child: displayAvatarUrl.isEmpty ? const Icon(Icons.person, color: Colors.grey, size: 30) : null,
               ),
