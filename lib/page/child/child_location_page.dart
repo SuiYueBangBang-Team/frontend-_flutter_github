@@ -328,6 +328,22 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
           // 1. 底层：全屏地图区域
           _buildMapLayer(),
 
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 10, // 避开系统状态栏（刘海/打孔屏）
+            left: 12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.6), // 半透明底色，不遮挡地图内容
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: const Text(
+                "审图号: GS(2023)3206号", // 百度地图当前常用的国测局审图号，可根据需要更新
+                style: TextStyle(fontSize: 10, color: Colors.black87),
+              ),
+            ),
+          ),
+
           // 2. 右侧：地图控制悬浮按钮
           Positioned(
             top: MediaQuery.of(context).padding.top + 10,
