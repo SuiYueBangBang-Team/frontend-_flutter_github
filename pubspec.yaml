@@ -41,8 +41,18 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.13.1 # 软件图标剪切
 
 flutter:
   uses-material-design: true
   assets:
     - assets/icons/
+
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/appicon.png"
+  # 如果想让 Android 图标支持自适应（背景和前景分离）
+  adaptive_icon_background: "#FFFFFF" # 背景色
+  adaptive_icon_foreground: "assets/appicon.png" # 前景图

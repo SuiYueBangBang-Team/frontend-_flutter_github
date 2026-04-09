@@ -101,7 +101,7 @@ class _HealthPageState extends State<HealthPage> {
           ],
         ),
         content: const Text(
-          "您的子女刚刚发来提醒，请立刻检查今日的药物是否已经服用！",
+          "孩子提醒您啦，记得看看今天的药有没有按时服用哦～",
           style: TextStyle(color: Colors.white, fontSize: 18, height: 1.5),
         ),
         actions: [
