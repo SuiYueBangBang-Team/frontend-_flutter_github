@@ -25,7 +25,7 @@ class _ChildSettingsPageState extends State<ChildSettingsPage> {
 
   Future<void> _loadUserInfo() async {
     final prefs = await SharedPreferences.getInstance();
-    //  修复点：使用 ?? "" 兜底，防止出现 type 'Null' is not a subtype of type 'String' 的报错
+    // 💡 修复点：使用 ?? "" 兜底，防止出现 type 'Null' is not a subtype of type 'String' 的报错
     setState(() {
       userPhone = prefs.getString('userPhone') ?? "未登录";
       nickname = prefs.getString('nickname') ?? "";
@@ -70,13 +70,16 @@ class _ChildSettingsPageState extends State<ChildSettingsPage> {
   // 💡 唤起人脸录入流程 (弹窗选择长辈 -> 拍照上传)
   Future<void> _handleFaceRegistration() async {
     try {
-      // 1. 获取绑定的长辈列表
-      var res = await ApiClient().get('/api/family/members');
-      List<dynamic> members = res ?? [];
+      // 1. 获取绑定的长辈列表 (💡 核心修复：请求设备关联接口，而不是通讯录接口！)
+      var res = await ApiClient().get('/api/family/devices');
+      List<dynamic> members = [];
+      if (res != null) {
+        members = res is List ? res : (res['data'] ?? []);
+      }
 
       if (members.isEmpty) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("暂无绑定的长辈，请先添加家人")));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("暂无绑定的长辈账号，请先在【家庭设备】页面添加绑定")));
         return;
       }
 
@@ -93,12 +96,12 @@ class _ChildSettingsPageState extends State<ChildSettingsPage> {
                 children: [
                   const Padding(
                     padding: EdgeInsets.all(16.0),
-                    child: Text("选择要录入人脸的长辈", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    child: Text("选择要录入人脸的关联长辈", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   ),
                   ...members.map((m) => ListTile(
                     leading: const CircleAvatar(backgroundColor: Color(0xFFEFF6FF), child: Icon(Icons.person, color: Colors.blue)),
-                    title: Text(m['name']),
-                    subtitle: Text(m['phone'] ?? ''),
+                    title: Text(m['name'] ?? "未知长辈"),
+                    subtitle: Text("状态: ${m['status'] ?? '未知'}"), // 💡 显示设备在线状态
                     trailing: const Icon(Icons.camera_alt, color: Colors.grey),
                     onTap: () => Navigator.pop(context, m),
                   )),
@@ -127,14 +130,14 @@ class _ChildSettingsPageState extends State<ChildSettingsPage> {
       // 4. 上传至后端
       FormData formData = FormData.fromMap({
         "file": await MultipartFile.fromFile(image.path, filename: "register_face.jpg"),
-        "memberId": selectedMember['id'], // 传入选择的长辈ID
+        "memberId": selectedMember['id'], // 传入选择的长辈关联ID
       });
 
       await ApiClient().post('/api/family/face/register', data: formData);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("已成功为 [${selectedMember['name']}] 录入人脸！"), backgroundColor: Colors.green),
+          SnackBar(content: Text("已成功为 [${selectedMember['name'] ?? '长辈'}] 录入人脸！"), backgroundColor: Colors.green),
         );
       }
     } catch (e) {
@@ -292,128 +295,14 @@ class _ChildSettingsPageState extends State<ChildSettingsPage> {
           ),
           const SizedBox(height: 15),
 
-          // --- 4. 个性化配置卡片 (与父母端完全一致，无护城河) ---
-          ListenableBuilder(
-            listenable: Listenable.merge([FontManager(), UserProfileManager()]),
-            builder: (context, child) {
-              return _buildSettingCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.face_retouching_natural_rounded, color: Colors.blueAccent, size: 32),
-                        const SizedBox(width: 12),
-                        Expanded(child: Text("个性化配置 (双端同步)", style: TextStyle(fontSize: AppFonts.titleLarge, fontWeight: FontWeight.bold))),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                    Text("选择帮帮形象", style: TextStyle(fontSize: AppFonts.bodyLarge, fontWeight: FontWeight.bold, color: Colors.black87)),
-                    const SizedBox(height: 10),
-                    _buildAvatarGrid(),
-
-                    const SizedBox(height: 10),
-                    Text("选择帮帮语言", style: TextStyle(fontSize: AppFonts.bodyLarge, fontWeight: FontWeight.bold, color: Colors.black87)),
-                    const SizedBox(height: 10),
-                    _buildLanguageGrid(),
-                  ],
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 15),
-
-          // --- 5. 退出登录 ---
+          // --- 4. 退出登录 ---
           _buildActionButton(label: "退出登录", icon: Icons.logout_rounded, color: Colors.redAccent, onTap: _handleLogout, isOutlined: true),
         ],
       ),
     );
   }
 
-  //  完全沿用父母端的形象网格
-  Widget _buildAvatarGrid() {
-    return GridView.builder(
-      shrinkWrap: true,
-      padding: EdgeInsets.zero,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: UserProfileManager.avatars.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
-        childAspectRatio: 0.9,
-      ),
-      itemBuilder: (context, index) {
-        bool selected = UserProfileManager().avatarIndex == index;
-        return GestureDetector(
-          onTap: () {
-            UserProfileManager().setAvatar(index);
-            // 🔒 TODO: 调用配置同步接口，同步给父母端
-          },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: selected ? Colors.blueAccent : Colors.grey.shade300, width: selected ? 2.5 : 1),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                CircleAvatar(
-                  radius: 22,
-                  backgroundColor: selected ? Colors.blueAccent : Colors.blueGrey.shade50,
-                  child: Icon(UserProfileManager.avatars[index]["icon"], color: selected ? Colors.white : Colors.blueGrey, size: 24),
-                ),
-                const SizedBox(height: 8),
-                Text(UserProfileManager.avatars[index]["name"], style: TextStyle(fontSize: AppFonts.bodySmall, color: selected ? Colors.blueAccent : Colors.black87)),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  //  完全沿用父母端的语言网格
-  Widget _buildLanguageGrid() {
-    return GridView.builder(
-      shrinkWrap: true,
-      padding: EdgeInsets.zero,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: UserProfileManager.languages.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 10,
-        crossAxisSpacing: 10,
-        childAspectRatio: 2.2,
-      ),
-      itemBuilder: (context, index) {
-        bool selected = UserProfileManager().languageIndex == index;
-        return GestureDetector(
-          onTap: () {
-            UserProfileManager().setLanguage(index);
-            // 🔒 TODO: 调用配置同步接口，同步给父母端
-          },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: selected ? Colors.blueAccent : Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: selected ? Colors.blueAccent : Colors.grey.shade300),
-            ),
-            child: Text(
-              UserProfileManager.languages[index],
-              style: TextStyle(fontSize: AppFonts.bodySmall, color: selected ? Colors.white : Colors.black87),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  //  完全沿用父母端的大边距卡片样式
+  // 💡 完全沿用父母端的大边距卡片样式
   Widget _buildSettingCard({required Widget child}) {
     return Container(
       padding: const EdgeInsets.all(25),
@@ -426,7 +315,7 @@ class _ChildSettingsPageState extends State<ChildSettingsPage> {
     );
   }
 
-  //  完全沿用父母端的大号按钮样式
+  // 💡 完全沿用父母端的大号按钮样式
   Widget _buildActionButton({required String label, required IconData icon, required Color color, required VoidCallback onTap, bool isOutlined = false}) {
     return GestureDetector(
       onTap: onTap,

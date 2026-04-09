@@ -493,7 +493,7 @@ class _HomeContentState extends State<HomeContent> with SingleTickerProviderStat
         if (_pendingImages.isNotEmpty) _buildPendingImagesTray(),
 
         Padding(
-          padding: const EdgeInsets.only(bottom: 40, left: 20, right: 20, top: 10),
+          padding: const EdgeInsets.only(bottom: 160, left: 20, right: 20, top: 10),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.center,
