@@ -10,6 +10,8 @@ import 'package:flutter_baidu_mapapi_map/flutter_baidu_mapapi_map.dart'; //
 import 'package:flutter_bmflocation/flutter_bmflocation.dart';
 import 'package:permission_handler/permission_handler.dart'; // 用于申请定位权限
 
+import 'dart:math';
+
 
 class ChildLocationPage extends StatefulWidget {
   const ChildLocationPage({super.key});
@@ -158,24 +160,39 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
       if (!mounted) return;
       // 自动轮询时开启“静默刷新”，不再触发 isLoading，彻底解决页面跳动
       _fetchLocationData(isSilent: true);
-      // 1. 每隔一段时间，去后端拉取一次长辈的最新位置
-      _fetchLocationData();
-
-
     });
   }
 
-  // 带视觉偏移的地图居中方法
-  void _moveToVisibleCenter(double targetLat, double targetLng) {
+  Future<void> _moveToVisibleCenter(double targetLat, double targetLng) async {
     if (myMapController == null) return;
 
-    // 数学原理：在 ZoomLevel = 15 的比例尺下，
-    // 减去 0.01 的纬度，会让相机中心往南移，大头针就会在屏幕上往北（上方）升起。
-    // 根据实际手机的视觉效果，微调 0.01 这个数值（通常在 0.008 ~ 0.015 之间）
-    double offsetLat = targetLat - 0.01;
+    // 1. 获取像素密度
+    double devicePixelRatio = MediaQuery.of(context).devicePixelRatio;
 
-    myMapController?.setCenterCoordinate(
-        BMFCoordinate(offsetLat, targetLng), true);
+    // 2. 获取屏幕尺寸（确保这是地图所在的尺寸）
+    Size screenSize = MediaQuery.of(context).size;
+
+    // 3. 计算目标点（逻辑像素）
+    // X 为屏幕横向中心
+    double targetX = screenSize.width / 2;
+    // Y 为上方 55% 区域的中心点 = 总高度 * 0.55 / 2
+    double targetY = screenSize.height * 0.375;
+
+    // 4. 关键：将逻辑像素转换为物理像素
+    BMFPoint targetScreenPt = BMFPoint(
+      targetX * devicePixelRatio,
+      targetY * devicePixelRatio,
+    );
+
+    BMFMapStatus mapStatus = BMFMapStatus(
+      targetGeoPt: BMFCoordinate(targetLat, targetLng),
+      targetScreenPt: targetScreenPt, // 此时坐标已匹配底层像素标准
+    );
+
+    await myMapController?.setNewMapStatus(
+      mapStatus: mapStatus,
+      animateDurationMs: 500,
+    );
   }
 
 
@@ -562,38 +579,27 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
 
 // 🗺️ 地图图层 Widget
   Widget _buildMapLayer() {
-    // 为了视觉居中，让地图渲染的第一帧画面，就自带 0.01 的南向偏移
-    double offsetLat = myLocation['lat']! - 0.01;
+    // 仅用于初始化第一帧画面的视觉居中（因为初始化时 zoomLevel 锁死为 15）
+    double offsetLat = myLocation['lat']! - 0.018;
 
-    //  构造包含了中心点坐标、缩放级别以及预留边界等状态参数的地图选项
+    // 构造包含了中心点坐标、缩放级别等状态参数的地图选项
     BMFMapOptions mapOptions = BMFMapOptions(
-        center: BMFCoordinate(myLocation['lat']!, myLocation['lng']!),
-        zoomLevel: 15,
-        mapPadding: BMFEdgeInsets(left: 0, top: 0, right: 0, bottom: 0)); //
+      center: BMFCoordinate(offsetLat, myLocation['lng']!),
+      zoomLevel: 15,
+      rotateEnabled: false, // 禁用地图的双指旋转手势
+    );
 
     return Container(
       width: double.infinity,
       height: double.infinity,
       color: const Color(0xFFF1F0EA),
-      //  BMFMapWidget 替代旧版 FakePainter
       child: BMFMapWidget(
         onBMFMapCreated: (controller) {
           myMapController = controller;
-          _updateMapOverlays(); // 地图初始化完毕，立刻执行一次标注绘制
-      // 💡 地图引擎刚启动完毕时，立刻再精确对准一次！
-          // 逻辑：如果列表里已经有长辈设备，一进页面就对准长辈；如果没有，就对准自己。
-          if (boundDevices.isNotEmpty && selectedDeviceId != null) {
-            var selectedDevice = boundDevices.firstWhere(
-                    (d) => d['id'] == selectedDeviceId,
-                orElse: () => boundDevices.first
-            );
-            _moveToVisibleCenter(selectedDevice['lat'], selectedDevice['lng']);
-          } else if (myLocation['lat'] != null) {
-            _moveToVisibleCenter(myLocation['lat']!, myLocation['lng']!);
-          }
         },
-        mapOptions: mapOptions, //
+        mapOptions: mapOptions,
       ),
     );
   }
+
 }
