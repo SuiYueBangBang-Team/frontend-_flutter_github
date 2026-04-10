@@ -71,8 +71,7 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
           });
           _updateMapOverlays();
           if (_isFirstLocation && myMapController != null) {
-            myMapController?.setCenterCoordinate(
-                BMFCoordinate(result.latitude!, result.longitude!), true);
+            _moveToVisibleCenter(result.latitude!, result.longitude!);
             _isFirstLocation = false;
           }
         }
@@ -164,6 +163,19 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
 
 
     });
+  }
+
+  // 带视觉偏移的地图居中方法
+  void _moveToVisibleCenter(double targetLat, double targetLng) {
+    if (myMapController == null) return;
+
+    // 数学原理：在 ZoomLevel = 15 的比例尺下，
+    // 减去 0.01 的纬度，会让相机中心往南移，大头针就会在屏幕上往北（上方）升起。
+    // 根据实际手机的视觉效果，微调 0.01 这个数值（通常在 0.008 ~ 0.015 之间）
+    double offsetLat = targetLat - 0.01;
+
+    myMapController?.setCenterCoordinate(
+        BMFCoordinate(offsetLat, targetLng), true);
   }
 
 
@@ -321,6 +333,10 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
 
   @override
   Widget build(BuildContext context) {
+    // 动态计算精确的吸附比例，190 = 底部导航栏(124) + 标题栏高度(66)
+    double screenHeight = MediaQuery.of(context).size.height;
+    double minSize = 210.0 / screenHeight;
+    double initialSize = 0.45 > minSize ? 0.45 : minSize + 0.1;
     return Scaffold(
       resizeToAvoidBottomInset: false,
       body: Stack(
@@ -329,16 +345,16 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
           _buildMapLayer(),
 
           Positioned(
-            top: MediaQuery.of(context).padding.top + 10, // 避开系统状态栏（刘海/打孔屏）
+            top: MediaQuery.of(context).padding.top,
             left: 12,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.6), // 半透明底色，不遮挡地图内容
+                color: Colors.transparent,
                 borderRadius: BorderRadius.circular(4),
               ),
               child: const Text(
-                "审图号: GS(2023)3206号", // 百度地图当前常用的国测局审图号，可根据需要更新
+                "审图号: GS（2021）4841",
                 style: TextStyle(fontSize: 10, color: Colors.black87),
               ),
             ),
@@ -360,8 +376,7 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
                     _updateMapOverlays();
                     // 点击立即回到“我的位置”
                     if (myMapController != null && myLocation['lat'] != null) {
-                      myMapController?.setCenterCoordinate(
-                          BMFCoordinate(myLocation['lat']!, myLocation['lng']!), true);
+                      _moveToVisibleCenter(myLocation['lat']!, myLocation['lng']!);
                     }
                   },
                 ),
@@ -371,11 +386,11 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
 
           // 3. 上层：可拖拽的设备列表底部面板
           DraggableScrollableSheet(
-            initialChildSize: 0.45,
-            minChildSize: 0.15,
+            initialChildSize: initialSize, //  使用计算出的初始高度
+            minChildSize: minSize,         //  使用计算出的精确最小吸附高度
             maxChildSize: 0.85,
             snap: true,
-            snapSizes: const [0.15, 0.45, 0.85],
+            snapSizes: [minSize, initialSize, 0.85], //  动态的三段式吸附
             builder: (context, scrollController) {
               return Container(
                 decoration: BoxDecoration(
@@ -436,7 +451,8 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
                     // 渲染设备列表
                     ...boundDevices.map((device) => _buildDeviceItem(device)),
 
-                    const SizedBox(height: 100),
+                    // 增大底部的留白，防止最下面的设备被导航条遮挡
+                    const SizedBox(height: 140),
                   ],
                 ),
               );
@@ -464,8 +480,7 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
 
         //  新增：点击长辈设备后，地图立刻平滑跳转到该长辈的经纬度位置
         if (myMapController != null) {
-          myMapController?.setCenterCoordinate(
-              BMFCoordinate(device['lat']!, device['lng']!), true);
+          _moveToVisibleCenter(device['lat']!, device['lng']!);
         }
       },
       child: Container(
@@ -545,8 +560,11 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
     );
   }
 
-// 🗺️ 替换为真实的地图图层 Widget
+// 🗺️ 地图图层 Widget
   Widget _buildMapLayer() {
+    // 为了视觉居中，让地图渲染的第一帧画面，就自带 0.01 的南向偏移
+    double offsetLat = myLocation['lat']! - 0.01;
+
     //  构造包含了中心点坐标、缩放级别以及预留边界等状态参数的地图选项
     BMFMapOptions mapOptions = BMFMapOptions(
         center: BMFCoordinate(myLocation['lat']!, myLocation['lng']!),
@@ -562,6 +580,17 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
         onBMFMapCreated: (controller) {
           myMapController = controller;
           _updateMapOverlays(); // 地图初始化完毕，立刻执行一次标注绘制
+      // 💡 地图引擎刚启动完毕时，立刻再精确对准一次！
+          // 逻辑：如果列表里已经有长辈设备，一进页面就对准长辈；如果没有，就对准自己。
+          if (boundDevices.isNotEmpty && selectedDeviceId != null) {
+            var selectedDevice = boundDevices.firstWhere(
+                    (d) => d['id'] == selectedDeviceId,
+                orElse: () => boundDevices.first
+            );
+            _moveToVisibleCenter(selectedDevice['lat'], selectedDevice['lng']);
+          } else if (myLocation['lat'] != null) {
+            _moveToVisibleCenter(myLocation['lat']!, myLocation['lng']!);
+          }
         },
         mapOptions: mapOptions, //
       ),
