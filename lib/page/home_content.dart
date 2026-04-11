@@ -345,6 +345,9 @@ class _HomeContentState extends State<HomeContent> with SingleTickerProviderStat
 
     try {
       final formData = FormData();
+      // 💡 修改点 1：发送语音对话时，把当前用户选择的音色 ID 作为普通字段传给后端
+      formData.fields.add(MapEntry("voiceId", UserProfileManager().currentVoiceId));
+
       formData.files.add(MapEntry("file", await MultipartFile.fromFile(path, filename: "record.wav")));
       for (int i = 0; i < imagesToSend.length; i++) {
         formData.files.add(MapEntry("imageFiles", await MultipartFile.fromFile(imagesToSend[i], filename: "image_$i.jpg")));
@@ -387,6 +390,9 @@ class _HomeContentState extends State<HomeContent> with SingleTickerProviderStat
 
     try {
       final formData = FormData();
+      // 💡 修改点 2：直接发送纯图片让 AI 解析时，也把当前的音色 ID 传过去
+      formData.fields.add(MapEntry("voiceId", UserProfileManager().currentVoiceId));
+
       for (int i = 0; i < imagesToSend.length; i++) {
         formData.files.add(MapEntry("imageFiles", await MultipartFile.fromFile(imagesToSend[i], filename: "img_$i.jpg")));
       }
