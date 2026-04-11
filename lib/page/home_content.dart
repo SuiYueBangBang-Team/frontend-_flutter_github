@@ -110,15 +110,23 @@ class _HomeContentState extends State<HomeContent> with SingleTickerProviderStat
     });
     _scrollToBottom();
 
-    /* --- TTS 播放已暂时禁用 ---
+    // 💡 修复：强制清空缓存并明确指定 MIME 类型
     if (audioUrl.isNotEmpty && myStreamId == _currentStreamId) {
       try {
-        await _audioPlayer.play(UrlSource('$_baseUrl$audioUrl'));
+        // 先停掉可能卡死的旧流
+        await _audioPlayer.stop();
+        // 在 URL 后面加个时间戳，彻底打破 Android 底层对同一个 URL 的玄学缓存
+        String antiCacheUrl = "$_baseUrl$audioUrl${audioUrl.contains('?') ? '&' : '?'}t=${DateTime.now().millisecondsSinceEpoch}";
+
+        debugPrint('🔊 准备播放音频: $antiCacheUrl');
+
+        // 明确告诉 Flutter 这是 mp3 格式
+        await _audioPlayer.play(UrlSource(antiCacheUrl, mimeType: 'audio/mpeg'));
       } catch (e) {
         debugPrint('TTS 播放失败: $e');
       }
     }
-    */
+
     if (action != null && action.isNotEmpty && myStreamId == _currentStreamId) {
       await VoiceIntentHandler.handle(action: action, params: params);
     }
@@ -173,8 +181,6 @@ class _HomeContentState extends State<HomeContent> with SingleTickerProviderStat
     resetTimeout();
 
     try {
-      // 💡 核心修复：解决 utf8.decoder 报错问题！
-      // 将 Dio 默认的 Stream<Uint8List> 强转为 Stream<List<int>>
       final Stream<List<int>> byteStream = (responseBody.stream as Stream).cast<List<int>>();
 
       await for (final String data in byteStream.transform(utf8.decoder)) {
@@ -223,16 +229,32 @@ class _HomeContentState extends State<HomeContent> with SingleTickerProviderStat
                     params: params is Map ? Map<String, dynamic>.from(params as Map) : <String, dynamic>{},
                   );
                 }
-                /* --- TTS 播放已暂时禁用 ---
-                // 暂存 audioUrl，等 ttsReady 事件再播放（避免后端音频还未生成时提前播放失败）
+
+                // 💡 修复 2：如果后端 meta 里面直接就带了 audioUrl（比如非图片快速流），直接播放
                 if (audioUrl.isNotEmpty && myStreamId == _currentStreamId) {
                   try {
                     await _audioPlayer.play(UrlSource("$_baseUrl$audioUrl"));
                   } catch (e) {
-                    debugPrint("TTS 立即播放失败，将等待 ttsReady 事件重试: $e");
+                    debugPrint("TTS 播放失败: $e");
                   }
                 }
-                */
+              }
+              // 💡 修复 3：新增对 ttsReady 事件的处理。这是你后端 Controller 最新修改后，用于异步回调音频地址的事件。
+              // 💡 修复：强制清空缓存并明确指定 MIME 类型
+              else if (jsonData['type'] == 'ttsReady') {
+                String audioUrl = jsonData['audioUrl'] ?? "";
+                if (audioUrl.isNotEmpty && myStreamId == _currentStreamId) {
+                  try {
+                    await _audioPlayer.stop();
+                    String antiCacheUrl = "$_baseUrl$audioUrl${audioUrl.contains('?') ? '&' : '?'}t=${DateTime.now().millisecondsSinceEpoch}";
+
+                    debugPrint('🔊 收到 ttsReady，准备播放: $antiCacheUrl');
+
+                    await _audioPlayer.play(UrlSource(antiCacheUrl, mimeType: 'audio/mpeg'));
+                  } catch (e) {
+                    debugPrint("收到 ttsReady，但 TTS 播放失败: $e");
+                  }
+                }
               }
             } catch (e) {
               debugPrint("SSE 流解析片段异常: $e");
@@ -345,6 +367,8 @@ class _HomeContentState extends State<HomeContent> with SingleTickerProviderStat
 
     try {
       final formData = FormData();
+      formData.fields.add(MapEntry("voiceId", UserProfileManager().currentVoiceId));
+
       formData.files.add(MapEntry("file", await MultipartFile.fromFile(path, filename: "record.wav")));
       for (int i = 0; i < imagesToSend.length; i++) {
         formData.files.add(MapEntry("imageFiles", await MultipartFile.fromFile(imagesToSend[i], filename: "image_$i.jpg")));
@@ -387,6 +411,8 @@ class _HomeContentState extends State<HomeContent> with SingleTickerProviderStat
 
     try {
       final formData = FormData();
+      formData.fields.add(MapEntry("voiceId", UserProfileManager().currentVoiceId));
+
       for (int i = 0; i < imagesToSend.length; i++) {
         formData.files.add(MapEntry("imageFiles", await MultipartFile.fromFile(imagesToSend[i], filename: "img_$i.jpg")));
       }
