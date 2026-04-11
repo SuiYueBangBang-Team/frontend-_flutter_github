@@ -51,7 +51,8 @@
 
     <application
         android:label="岁悦帮帮"
-        android:name=".MyApplication" android:icon="@mipmap/ic_launcher">
+        android:name=".MyApplication" android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true">
 
         <meta-data
             android:name="com.baidu.lbsapi.API_KEY"
