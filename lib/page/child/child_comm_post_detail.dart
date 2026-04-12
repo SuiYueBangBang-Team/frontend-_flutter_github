@@ -160,7 +160,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text("评论已删除"),
-              duration: Duration(seconds: 1), // 设置为 1 秒后自动消失
+              duration: Duration(milliseconds: 500), // 设置为 1 秒后自动消失
             )
         );
       }
