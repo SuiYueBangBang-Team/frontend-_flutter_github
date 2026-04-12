@@ -22,36 +22,39 @@ public class AmapAutoService extends AccessibilityService {
     private static final String TAG = "AmapAuto";
     private static final String AMAP_PACKAGE = "com.autonavi.minimap";
 
-    // 以下 ID 来自真机 Appium Inspector / 布局树（高德地图首页、搜索页、结果列表、POI 详情）
-    // 若 App 大版本升级导致失效，请重新抓取后替换。
-
-    /** 首页：搜索条紫色背景容器（LinearLayout），点击后进入搜索页 ✅ 修正ID：maphone 而非 naphome */
-    private static final String ID_HOME_SEARCHBAR_BG = "com.autonavi.minimap:id/maphone_searchbar_bg";
-    /** 首页：搜索条外层容器 */
-    private static final String ID_HOME_SEARCHBAR_CONTAINER = "com.autonavi.minimap:id/maphone_searchbar_container";
-    /** 首页：热搜词 TextView「查找地点、公交、地铁」 */
+    // 【修复】修正首页搜索框ID（maphome而非maphone）
+    // 兼容旧版或备用 ID
+    private static final String ID_SEARCH_BTN_LEGACY = "com.autonavi.minimap:id/search_btn"; // <-- 加这行
+    private static final String ID_HOME_SEARCHBAR_BG = "com.autonavi.minimap:id/maphome_searchbar_bg";
+    private static final String ID_HOME_SEARCHBAR_CONTAINER = "com.autonavi.minimap:id/maphome_searchbar_container";
     private static final String ID_HOME_TXT_HOTWORD = "com.autonavi.minimap:id/txt_hotword";
+    private static final String ID_HOME_SCAN_BTN = "com.autonavi.minimap:id/btn_qrscan";
+    private static final String ID_HOME_VOICE_BTN = "com.autonavi.minimap:id/btn_voice";
 
-    /** 搜索页占位/提示文案（与截图 EditText 上 text 一致） */
+    // 【新增】搜索页/结果页关键ID（适配多版本）
+    private static final String ID_SEARCH_INPUT = "com.autonavi.minimap:id/input_search";
+    private static final String ID_SEARCH_BTN = "com.autonavi.minimap:id/btn_search";
+    private static final String ID_RESULT_ITEM_CONTAINER = "com.autonavi.minimap:id/widget_item_container";
+    private static final String ID_NAVI_BTN = "com.autonavi.minimap:id/btn_navi";
+
     private static final String SEARCH_PLACEHOLDER = "查找地点、公交、地铁";
-
-    // 兼容旧版或备用 ID（保留作兜底）
-    private static final String ID_SEARCH_BTN_LEGACY = "com.autonavi.minimap:id/search_btn";
+    private static final String SEARCH_PLACEHOLDER_ALT = "搜索地点、公交、地铁";
 
     // 状态机常量
     private static final int STEP_IDLE                = 0;
-    private static final int STEP_CLICK_SEARCH_BOX    = 1;   // 首页点击搜索框
-    private static final int STEP_INPUT_DESTINATION   = 2;   // 输入目的地
-    private static final int STEP_CLICK_SEARCH_BTN    = 3;   // 点击搜索按钮
-    private static final int STEP_CLICK_RESULT_ITEM   = 4;   // 点击搜索结果
-    private static final int STEP_CLICK_GO_HERE      = 5;   // 点击"到这里去"或"导航"按钮
-    private static final int STEP_CONFIRM_NAVI        = 6;   // 确认开始导航
+    private static final int STEP_CLICK_SEARCH_BOX    = 1;
+    private static final int STEP_INPUT_DESTINATION   = 2;
+    private static final int STEP_CLICK_SEARCH_BTN    = 3;
+    private static final int STEP_CLICK_RESULT_ITEM   = 4;
+    private static final int STEP_CLICK_GO_HERE      = 5;
+    private static final int STEP_CONFIRM_NAVI        = 6;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private int step = STEP_IDLE;
     private String targetDestination = "";
     private long lastHandledRequestId = -1L;
     private long stepStartTime = 0L;
+    private static final long STEP_TIMEOUT = 15000; // 分步骤超时15秒
 
     @Override
     protected void onServiceConnected() {
@@ -59,7 +62,8 @@ public class AmapAutoService extends AccessibilityService {
         AccessibilityServiceInfo info = new AccessibilityServiceInfo();
         info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
                 | AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
-                | AccessibilityEvent.TYPE_VIEW_CLICKED; // 补充点击事件，提升响应
+                | AccessibilityEvent.TYPE_VIEW_CLICKED
+                | AccessibilityEvent.TYPE_VIEW_FOCUSED; // 补充焦点事件
         info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC;
         info.notificationTimeout = 100;
         info.packageNames = new String[]{AMAP_PACKAGE};
@@ -94,23 +98,26 @@ public class AmapAutoService extends AccessibilityService {
                 stepStartTime = System.currentTimeMillis();
                 Log.d(TAG, "========== 🗺️ 检测到新导航任务：去 " + targetDestination + " ==========");
 
-                String windowClass = event.getClassName() != null ? event.getClassName().toString() : "";
-                // 若已出现搜索页 EditText（顶部输入框），跳过首页点击搜索条
+                // 【优化】双重判断：节点特征+Activity类名
                 AccessibilityNodeInfo rootProbe = getRootInActiveWindow();
                 try {
-                    if (rootProbe != null && findSearchPageEditText(rootProbe) != null) {
+                    boolean isInSearchFlow = false;
+                    if (rootProbe != null) {
+                        AccessibilityNodeInfo input = findSearchPageEditText(rootProbe);
+                        isInSearchFlow = input != null;
+                    }
+
+                    String windowClass = event.getClassName() != null ? event.getClassName().toString() : "";
+                    if (isInSearchFlow || isSearchPage(windowClass) || isSearchResultPage(windowClass)) {
                         step = STEP_INPUT_DESTINATION;
-                        Log.d(TAG, "✅ 已检测到搜索页输入框，跳过首页点击搜索条");
-                    } else if (isSearchPage(windowClass) || isSearchResultPage(windowClass)) {
-                        step = STEP_INPUT_DESTINATION;
-                        Log.d(TAG, "✅ 根据 Activity 判断已在搜索流程，跳过首页点击搜索条");
+                        Log.d(TAG, "✅ 已在搜索流程中，跳过首页点击搜索条");
                     } else {
                         step = STEP_CLICK_SEARCH_BOX;
                         Log.d(TAG, "✅ 进入首页点击搜索框步骤");
                     }
                 } finally {
                     if (rootProbe != null) {
-                        rootProbe.recycle();
+                        rootProbe.recycle(); // 【修复】确保节点回收
                     }
                 }
             } else {
@@ -120,8 +127,8 @@ public class AmapAutoService extends AccessibilityService {
 
         if (step == STEP_IDLE) return;
 
-        // 超时重置（20秒）
-        if (System.currentTimeMillis() - stepStartTime > 20000) {
+        // 【优化】分步骤超时
+        if (System.currentTimeMillis() - stepStartTime > STEP_TIMEOUT) {
             Log.e(TAG, "❌ 步骤超时卡死，强制重置状态机！当前停留在 step=" + step);
             step = STEP_IDLE;
             clearPendingTask();
@@ -137,7 +144,8 @@ public class AmapAutoService extends AccessibilityService {
         return windowClass.contains("SearchActivity")
                 || windowClass.contains("KeywordSearchActivity")
                 || windowClass.contains("SearchPoiActivity")
-                || windowClass.contains("InputSearchActivity"); // 补充搜索页Activity
+                || windowClass.contains("InputSearchActivity")
+                || windowClass.contains("SearchMainActivity"); // 补充多版本Activity
     }
 
     private boolean isSearchResultPage(String windowClass) {
@@ -145,7 +153,8 @@ public class AmapAutoService extends AccessibilityService {
         return windowClass.contains("ResultActivity")
                 || windowClass.contains("PoiResultActivity")
                 || windowClass.contains("SearchResultActivity")
-                || windowClass.contains("PoiListActivity"); // 补充结果页Activity
+                || windowClass.contains("PoiListActivity")
+                || windowClass.contains("PoiDetailActivity"); // 补充详情页
     }
 
     private final Runnable stateMachineRunnable = new Runnable() {
@@ -169,7 +178,7 @@ public class AmapAutoService extends AccessibilityService {
                         step = STEP_INPUT_DESTINATION;
                         stepStartTime = System.currentTimeMillis();
                         success = true;
-                        handler.postDelayed(this, 800); // 给页面跳转留足时间
+                        handler.postDelayed(this, 1000); // 【优化】延长跳转时间，适配输入法弹出
                         return;
                     } else {
                         Log.e(TAG, "❌ 步骤1失败：未找到可点击的搜索框");
@@ -183,7 +192,7 @@ public class AmapAutoService extends AccessibilityService {
                         step = STEP_CLICK_SEARCH_BTN;
                         stepStartTime = System.currentTimeMillis();
                         success = true;
-                        handler.postDelayed(this, 500);
+                        handler.postDelayed(this, 800); // 等待联想结果
                         return;
                     } else {
                         Log.e(TAG, "❌ 步骤2失败：未找到输入框或输入失败");
@@ -197,8 +206,8 @@ public class AmapAutoService extends AccessibilityService {
                         step = STEP_CLICK_RESULT_ITEM;
                         stepStartTime = System.currentTimeMillis();
                         success = true;
+                        handler.postDelayed(this, 1000); // 等待结果加载
                     } else if (clickResultRowByDestination(root, targetDestination)) {
-                        // 部分版本输入后列表已出现，无需再点「搜索」
                         Log.d(TAG, "✅ 步骤3兜底：直接匹配到结果列表项，跳过搜索按钮");
                         step = STEP_CLICK_GO_HERE;
                         stepStartTime = System.currentTimeMillis();
@@ -215,6 +224,7 @@ public class AmapAutoService extends AccessibilityService {
                         step = STEP_CLICK_GO_HERE;
                         stepStartTime = System.currentTimeMillis();
                         success = true;
+                        handler.postDelayed(this, 1000); // 等待详情页加载
                     } else {
                         Log.e(TAG, "❌ 步骤4失败：未找到匹配的结果项");
                     }
@@ -227,6 +237,7 @@ public class AmapAutoService extends AccessibilityService {
                         step = STEP_CONFIRM_NAVI;
                         stepStartTime = System.currentTimeMillis();
                         success = true;
+                        handler.postDelayed(this, 800);
                     } else {
                         Log.e(TAG, "❌ 步骤5失败：未找到导航按钮");
                     }
@@ -249,12 +260,16 @@ public class AmapAutoService extends AccessibilityService {
                 handler.removeCallbacks(this);
                 handler.postDelayed(this, 500);
             }
+
+            root.recycle(); // 【修复】根节点回收
         }
     };
 
     @Override
     public void onInterrupt() {
         Log.w(TAG, "AmapAutoService 被中断");
+        handler.removeCallbacks(stateMachineRunnable);
+        step = STEP_IDLE;
     }
 
     // ---------------------------------
@@ -284,22 +299,38 @@ public class AmapAutoService extends AccessibilityService {
     // ---------------------------------
 
     /**
-     * 步骤1：点击首页搜索条（截图：maphome_searchbar_bg / txt_hotword / 搜索框 content-desc）
+     * 步骤1：点击首页搜索条（多ID+多特征兜底）
      */
     private boolean clickSearchBox(AccessibilityNodeInfo root) {
         if (clickByViewId(root, ID_HOME_SEARCHBAR_BG)) return true;
         if (clickByViewId(root, ID_HOME_SEARCHBAR_CONTAINER)) return true;
         if (clickByViewId(root, ID_HOME_TXT_HOTWORD)) return true;
         if (clickByAnyDesc(root, "搜索框", "查找地点", "公交", "地铁")) return true;
-        if (clickByAnyText(root, SEARCH_PLACEHOLDER)) return true;
+        if (clickByAnyText(root, SEARCH_PLACEHOLDER, SEARCH_PLACEHOLDER_ALT)) return true;
+        // 【新增】兜底：点击搜索框附近的可点击区域
+        AccessibilityNodeInfo scanBtn = findFirstNodeByViewId(root, ID_HOME_SCAN_BTN);
+        if (scanBtn != null) {
+            AccessibilityNodeInfo parent = scanBtn.getParent();
+            if (parent != null && performClick(parent)) {
+                Log.d(TAG, "✅ 通过扫码按钮父节点点击搜索框");
+                return true;
+            }
+        }
         return false;
     }
 
     /**
-     * 步骤2：在搜索页顶部 EditText 输入目的地（截图：EditText 文案为「查找地点、公交、地铁」）
+     * 步骤2：在搜索页顶部 EditText 输入目的地（多ID+占位符兜底）
+     */
+    /**
+     * 步骤2：在搜索页顶部 EditText 输入目的地（多ID+占位符兜底）
      */
     private boolean inputDestination(AccessibilityNodeInfo root, String destination) {
-        AccessibilityNodeInfo input = findSearchPageEditText(root);
+        AccessibilityNodeInfo input = findFirstNodeByViewId(root, ID_SEARCH_INPUT);
+        if (input == null) {
+            Log.w(TAG, "⚠️ 未找到ID对应的输入框，尝试找带占位符的EditText");
+            input = findSearchPageEditText(root);
+        }
         if (input == null) {
             Log.w(TAG, "⚠️ 未找到带占位符的输入框，尝试找第一个EditText兜底");
             input = findFirstNodeByClass(root, "android.widget.EditText");
@@ -309,23 +340,38 @@ public class AmapAutoService extends AccessibilityService {
             return false;
         }
 
-        // 先聚焦，再清空原有内容，再输入
-        input.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
-        input.performAction(AccessibilityNodeInfo.ACTION_SELECT, null); // 全选
-        input.performAction(AccessibilityNodeInfo.ACTION_CUT, null); // 清空
-        Bundle args = new Bundle();
-        args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, destination);
-        boolean ok = input.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args);
-        if (ok) {
-            Log.d(TAG, "✅ 已成功填入目的地: " + destination);
-        }
-        return ok;
-    }
+        try {
+            // 【修复】简化输入逻辑，解决输入失败问题
+            boolean ok = false;
 
+            // 方法1：直接设置文本（最稳定）
+            Bundle args = new Bundle();
+            args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, destination);
+            ok = input.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args);
+
+            // 方法2：如果失败，尝试先聚焦再输入
+            if (!ok) {
+                input.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
+                ok = input.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args);
+            }
+
+            if (ok) {
+                Log.d(TAG, "✅ 已成功填入目的地: " + destination);
+            } else {
+                Log.e(TAG, "❌ 输入框赋值失败");
+            }
+            return ok;
+
+        } catch (Exception e) {
+            Log.e(TAG, "❌ 输入异常: " + e.getMessage());
+            return false;
+        }
+    }
     /**
-     * 步骤3：点击搜索页右上角「搜索」按钮（截图）
+     * 步骤3：点击搜索页右上角「搜索」按钮（多ID+文字兜底）
      */
     private boolean clickSearchButton(AccessibilityNodeInfo root) {
+        if (clickByViewId(root, ID_SEARCH_BTN)) return true;
         if (clickByViewId(root, ID_SEARCH_BTN_LEGACY)) return true;
         if (clickByAnyText(root, "搜索")) return true;
         if (clickByAnyDesc(root, "搜索")) return true;
@@ -333,7 +379,7 @@ public class AmapAutoService extends AccessibilityService {
     }
 
     /**
-     * 步骤4：点击列表里对应地址（截图：结果行 ViewGroup content-desc 为 POI 名称，如「君汇上城」）
+     * 步骤4：点击列表里对应地址（优化匹配逻辑，跳过广告）
      */
     private boolean clickFirstResult(AccessibilityNodeInfo root, String destination) {
         if (clickResultRowByDestination(root, destination)) return true;
@@ -352,11 +398,12 @@ public class AmapAutoService extends AccessibilityService {
     }
 
     /**
-     * 步骤5：POI 详情底栏点击「导航」（截图：android.view.View text="导航"）
+     * 步骤5：POI 详情底栏点击「导航」（优先ID+位置匹配）
      */
     private boolean clickGoHereButton(AccessibilityNodeInfo root) {
+        if (clickByViewId(root, ID_NAVI_BTN)) return true;
         if (clickNavigateTextButton(root)) return true;
-        if (clickByAnyText(root, "开始导航", "到这里去")) return true;
+        if (clickByAnyText(root, "开始导航", "到这里去", "导航去")) return true;
         if (clickByAnyDesc(root, "导航", "开始导航")) return true;
         return false;
     }
@@ -369,12 +416,12 @@ public class AmapAutoService extends AccessibilityService {
             Log.d(TAG, "✅ 已检测到导航界面特征，任务完成");
             return true;
         }
-        if (clickByAnyText(root, "开始导航", "确定", "确认")) return true;
+        if (clickByAnyText(root, "开始导航", "确定", "确认", "开始")) return true;
         if (clickByAnyDesc(root, "开始导航")) return true;
         return false;
     }
 
-    /** 搜索页：优先找顶部带占位文案的 EditText */
+    /** 搜索页：优先找带占位文案的 EditText */
     private AccessibilityNodeInfo findSearchPageEditText(AccessibilityNodeInfo root) {
         List<AccessibilityNodeInfo> all = flatten(root);
         for (AccessibilityNodeInfo node : all) {
@@ -382,39 +429,39 @@ public class AmapAutoService extends AccessibilityService {
             CharSequence cls = node.getClassName();
             if (cls == null || !"android.widget.EditText".contentEquals(cls)) continue;
             CharSequence tx = node.getText();
-            if (tx != null && tx.toString().contains(SEARCH_PLACEHOLDER)) {
+            if (tx != null && (tx.toString().contains(SEARCH_PLACEHOLDER) || tx.toString().contains(SEARCH_PLACEHOLDER_ALT))) {
                 Log.d(TAG, "✅ 找到带占位符的搜索输入框");
                 return node;
             }
         }
-        AccessibilityNodeInfo first = findFirstNodeByClass(root, "android.widget.EditText");
-        if (first != null) {
-            Log.w(TAG, "⚠️ 未找到带占位符的输入框，使用第一个EditText兜底");
-            return first;
-        }
-        Log.e(TAG, "❌ 完全找不到EditText节点");
         return null;
     }
 
-    /** 按 content-desc 匹配 POI 名称点击整行（与 Inspector 截图一致） */
+    /** 按 content-desc 匹配 POI 名称点击整行（处理富文本） */
     private boolean clickResultRowByDestination(AccessibilityNodeInfo root, String destination) {
         if (destination == null || destination.trim().isEmpty()) return false;
-        String key = destination.trim();
+        String key = normalizeUiText(destination.trim());
         List<AccessibilityNodeInfo> all = flatten(root);
         for (AccessibilityNodeInfo node : all) {
             if (node == null) continue;
+            // 【优化】同时匹配content-desc和text
             CharSequence cd = node.getContentDescription();
-            if (cd == null) continue;
-            String d = cd.toString().trim();
+            CharSequence tx = node.getText();
+            String d = "";
+            if (cd != null) d = normalizeUiText(cd.toString().trim());
+            else if (tx != null) d = normalizeUiText(tx.toString().trim());
             if (d.isEmpty()) continue;
+
             if (d.equals(key) || d.contains(key) || key.contains(d)) {
+                // 跳过广告
+                if (d.contains("广告") || d.contains("推广")) continue;
                 if (performClick(node)) {
-                    Log.d(TAG, "✅ 通过 content-desc 点击结果行: " + d);
+                    Log.d(TAG, "✅ 通过 content-desc/text 点击结果行: " + d);
                     return true;
                 }
                 AccessibilityNodeInfo parent = findClickableParent(node);
                 if (parent != null && performClick(parent)) {
-                    Log.d(TAG, "✅ 通过 content-desc 父节点点击结果行: " + d);
+                    Log.d(TAG, "✅ 通过父节点点击结果行: " + d);
                     return true;
                 }
             }
@@ -423,29 +470,28 @@ public class AmapAutoService extends AccessibilityService {
     }
 
     /**
-     * 详情页底部「导航」：优先从树末尾向前找 text 精确为「导航」的节点（避免点到其它区域的「导航」文案）
+     * 详情页底部「导航」：优先从树末尾向前找 text 精确为「导航」的节点（过滤非按钮）
      */
     private boolean clickNavigateTextButton(AccessibilityNodeInfo root) {
         List<AccessibilityNodeInfo> all = flatten(root);
+        // 倒序查找，优先底部按钮
         for (int i = all.size() - 1; i >= 0; i--) {
             AccessibilityNodeInfo node = all.get(i);
             if (node == null) continue;
             CharSequence t = node.getText();
             if (t == null) continue;
-            if ("导航".contentEquals(normalizeUiText(t.toString()))) {
-                if (performClick(node)) {
-                    Log.d(TAG, "✅ 已点击底栏「导航」");
+            String text = normalizeUiText(t.toString());
+            if ("导航".equals(text)) {
+                // 【优化】确保是可点击按钮
+                if (node.isClickable() && performClick(node)) {
+                    Log.d(TAG, "✅ 已点击底栏「导航」按钮");
                     return true;
                 }
-            }
-        }
-        for (AccessibilityNodeInfo node : all) {
-            if (node == null) continue;
-            CharSequence t = node.getText();
-            if (t == null) continue;
-            if ("导航".contentEquals(normalizeUiText(t.toString())) && performClick(node)) {
-                Log.d(TAG, "✅ 已点击「导航」（正序兜底）");
-                return true;
+                AccessibilityNodeInfo parent = findClickableParent(node);
+                if (parent != null && performClick(parent)) {
+                    Log.d(TAG, "✅ 已通过父节点点击「导航」按钮");
+                    return true;
+                }
             }
         }
         return false;
@@ -454,9 +500,12 @@ public class AmapAutoService extends AccessibilityService {
     private static String normalizeUiText(String raw) {
         if (raw == null) return "";
         String s = raw.trim();
+        // 【优化】更彻底的富文本过滤
         if (s.contains("<") && s.contains(">")) {
             s = s.replaceAll("<[^>]+>", "");
         }
+        // 去除特殊符号
+        s = s.replaceAll("[&;@#\\\"']", "");
         return s.trim();
     }
 
@@ -468,6 +517,10 @@ public class AmapAutoService extends AccessibilityService {
             if (isUnderSearchEditText(node)) continue;
             CharSequence cls = node.getClassName();
             if (cls != null && cls.toString().contains("EditText")) continue;
+            // 跳过广告
+            CharSequence tx = node.getText();
+            if (tx != null && (tx.toString().contains("广告") || tx.toString().contains("推广"))) continue;
+
             AccessibilityNodeInfo clickable = findClickableParent(node);
             if (clickable != null && performClick(clickable)) {
                 Log.d(TAG, "✅ 通过文字匹配点击了列表项（跳过搜索框）");
@@ -485,7 +538,9 @@ public class AmapAutoService extends AccessibilityService {
             CharSequence cls = cur.getClassName();
             if (cls != null && "android.widget.EditText".contentEquals(cls)) {
                 CharSequence tx = cur.getText();
-                if (tx != null && tx.toString().contains(SEARCH_PLACEHOLDER)) return true;
+                if (tx != null && (tx.toString().contains(SEARCH_PLACEHOLDER) || tx.toString().contains(SEARCH_PLACEHOLDER_ALT))) {
+                    return true;
+                }
             }
             cur = cur.getParent();
         }
@@ -493,13 +548,14 @@ public class AmapAutoService extends AccessibilityService {
     }
 
     private boolean isInNavigationMode(AccessibilityNodeInfo root) {
-        // 检测导航模式特征：显示路线、方向指南、距离信息等
         if (nodeExistsByText(root, "剩余")) return true;
         if (nodeExistsByText(root, "公里")) return true;
         if (nodeExistsByText(root, "米")) return true;
+        if (nodeExistsByText(root, "导航中")) return true;
         if (nodeExistsByDesc(root, "导航")) return true;
         if (nodeExistsByText(root, "路线")) return true;
-        if (nodeExistsByText(root, "前方")) return true; // 补充导航语音特征
+        if (nodeExistsByText(root, "前方")) return true;
+        if (nodeExistsByText(root, "预计到达")) return true;
         return false;
     }
 
@@ -526,24 +582,17 @@ public class AmapAutoService extends AccessibilityService {
      */
     private boolean clickFirstResultItem(AccessibilityNodeInfo root) {
         List<AccessibilityNodeInfo> all = flatten(root);
-        int skipCount = 0;
         for (AccessibilityNodeInfo node : all) {
             CharSequence text = node.getText();
-            if (text != null) {
-                String t = text.toString();
-                // 跳过广告标识
-                if (t.contains("广告") || t.contains("推广")) {
-                    skipCount++;
-                    continue;
-                }
-                // 跳过过短的无意义文字
-                if (t.trim().length() < 2) continue;
-                // 点击有文字且有可点击父节点的节点
-                AccessibilityNodeInfo clickable = findClickableParent(node);
-                if (clickable != null && performClick(clickable)) {
-                    Log.d(TAG, "✅ 点击了第一个结果项: " + t);
-                    return true;
-                }
+            if (text == null) continue;
+            String t = normalizeUiText(text.toString());
+            // 跳过广告/过短文字
+            if (t.contains("广告") || t.contains("推广") || t.trim().length() < 2) continue;
+
+            AccessibilityNodeInfo clickable = findClickableParent(node);
+            if (clickable != null && performClick(clickable)) {
+                Log.d(TAG, "✅ 点击了第一个结果项: " + t);
+                return true;
             }
         }
         return false;
@@ -555,10 +604,14 @@ public class AmapAutoService extends AccessibilityService {
         for (AccessibilityWindowInfo window : windows) {
             AccessibilityNodeInfo windowRoot = window.getRoot();
             if (windowRoot == null) continue;
-            if (destination != null && !destination.isEmpty() && clickResultRowByDestination(windowRoot, destination)) {
-                return true;
+            try {
+                if (destination != null && !destination.isEmpty() && clickResultRowByDestination(windowRoot, destination)) {
+                    return true;
+                }
+                if (clickFirstResultItem(windowRoot)) return true;
+            } finally {
+                windowRoot.recycle(); // 【修复】窗口根节点回收
             }
-            if (clickFirstResultItem(windowRoot)) return true;
         }
         return false;
     }
@@ -603,6 +656,7 @@ public class AmapAutoService extends AccessibilityService {
     }
 
     private boolean performClick(AccessibilityNodeInfo node) {
+        if (node == null) return false;
         AccessibilityNodeInfo cur = node;
         while (cur != null) {
             if (cur.isClickable()) {
@@ -639,7 +693,10 @@ public class AmapAutoService extends AccessibilityService {
     private AccessibilityNodeInfo findFirstNodeByViewId(AccessibilityNodeInfo root, String viewId) {
         if (viewId == null || viewId.isEmpty()) return null;
         List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByViewId(viewId);
-        return (nodes != null && !nodes.isEmpty()) ? nodes.get(0) : null;
+        if (nodes != null && !nodes.isEmpty()) {
+            return nodes.get(0);
+        }
+        return null;
     }
 
     private AccessibilityNodeInfo findFirstNodeByClass(AccessibilityNodeInfo root, String className) {
@@ -678,18 +735,15 @@ public class AmapAutoService extends AccessibilityService {
 
     /**
      * 将目的地字符串拆分为关键词列表
-     * 例如：「北京市朝阳区三里屯」 → ["北京市朝阳区三里屯", "北京市朝阳区", "三里屯", "三里", "屯"]
      */
     private String[] splitKeywords(String destination) {
         List<String> parts = new ArrayList<>();
         parts.add(destination);
-        // 按空格/逗号/号分割
         String[] splits = destination.split("[\\s,，。#]");
         for (String s : splits) {
             s = s.trim();
             if (s.length() >= 2) parts.add(s);
         }
-        // 从长到短排序
         parts.sort((a, b) -> b.length() - a.length());
         return parts.toArray(new String[0]);
     }

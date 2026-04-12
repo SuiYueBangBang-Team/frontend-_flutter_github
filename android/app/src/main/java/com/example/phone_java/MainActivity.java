@@ -24,6 +24,7 @@ import io.flutter.embedding.engine.FlutterEngine;
 import io.flutter.plugin.common.MethodChannel;
 
 public class MainActivity extends FlutterActivity {
+
     /**
      * 话费充值小程序「账号原始ID」（截图）。拉起接口使用 gh_ 原始 ID，不是小程序 AppID（wx...）。
      */
@@ -298,6 +299,7 @@ public class MainActivity extends FlutterActivity {
     }
 
     /** 缓存高德导航目的地并拉起高德地图，由无障碍服务自动输入目的地并开始导航 */
+    /** 缓存高德导航目的地并拉起高德地图，由无障碍服务自动输入目的地并开始导航 */
     private boolean cacheAmapNaviAndLaunch(String destination) {
         if (destination == null || destination.trim().isEmpty()) {
             android.util.Log.e(TAG, "❌ 高德导航目的地为空，拒绝执行");
@@ -310,19 +312,7 @@ public class MainActivity extends FlutterActivity {
                 .apply();
         android.util.Log.d(TAG, "✅ 高德导航目的地已缓存: " + destination.trim());
 
-        // 尝试用 URI Scheme 启动高德并直接导航
-        String encodedName = android.net.Uri.encode(destination.trim());
-        String navUri = "androidamap://navi?sourceApplication=appname&keyword=" + encodedName;
-        Intent navIntent = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(navUri));
-        navIntent.setPackage(AMAP_PACKAGE);
-        if (navIntent.resolveActivity(getPackageManager()) != null) {
-            navIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(navIntent);
-            android.util.Log.d(TAG, "✅ 高德地图已通过 URI Scheme 启动导航: " + destination.trim());
-            return true;
-        }
-
-        // 兜底：直接拉起高德地图主页（让无障碍服务自动搜索）
+        // 【修复】只启动高德主页，完全交给无障碍服务自动化
         Intent launchIntent = getPackageManager().getLaunchIntentForPackage(AMAP_PACKAGE);
         if (launchIntent != null) {
             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
