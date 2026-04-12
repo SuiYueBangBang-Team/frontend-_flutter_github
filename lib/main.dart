@@ -19,8 +19,8 @@ import 'index_page.dart';
 //  注意：请确保你已经按照之前的建议在 lib/page/child/ 目录下创建了该文件
 import 'package:phone_java/page/child/child_index_page.dart';
 
-import 'package:phone_java/page/child/child_create_post_page.dart';
-import 'package:phone_java/page/child/child_my_post_page.dart';
+import 'package:phone_java/page/child/child_comm_post_create.dart';
+import 'package:phone_java/page/child/child_comm_post_myself.dart';
 
 //  1. 全局 NavigatorKey
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();

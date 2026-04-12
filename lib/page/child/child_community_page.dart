@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import '../../utils/api_client.dart';
-import 'post_detail_page.dart';
+import 'child_comm_post_detail.dart';
+
 
 class ChildCommunityPage extends StatefulWidget {
   const ChildCommunityPage({super.key});

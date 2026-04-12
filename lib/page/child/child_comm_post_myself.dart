@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../utils/api_client.dart';
-import 'post_detail_page.dart';
+import 'child_comm_post_detail.dart';
 
 class MyPostPage extends StatefulWidget {
   const MyPostPage({super.key});
@@ -79,6 +79,7 @@ class _MyPostPageState extends State<MyPostPage> {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("删除失败，请检查网络")));
     }
   }
+
 
   @override
   Widget build(BuildContext context) {

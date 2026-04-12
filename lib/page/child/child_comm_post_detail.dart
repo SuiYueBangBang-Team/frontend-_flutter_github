@@ -123,6 +123,49 @@ class _PostDetailPageState extends State<PostDetailPage> {
     }
   }
 
+
+  // 🌟 新增：删除评论的网络请求
+  Future<void> _deleteComment(int index, String commentId) async {
+    try {
+      // 注意：这里的接口路径 /api/community/comment/delete 需要换成你后端真实的评论删除接口
+      var response = await ApiClient().post('/api/community/comment/delete', data: {
+        "id": commentId,
+      });
+
+      if (response != null && mounted) {
+        setState(() {
+          commentList.removeAt(index); // 从本地列表中移除该条评论
+        });
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("评论已删除")));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("删除失败: $e")));
+      }
+    }
+  }
+
+  // 🌟 新增：删除评论确认弹窗
+  void _showDeleteCommentDialog(int index, String commentId) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("删除评论"),
+        content: const Text("确定要删除这条评论吗？"),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("取消")),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context); // 先关闭弹窗
+              _deleteComment(index, commentId); // 再执行删除
+            },
+            child: const Text("删除", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
   likePost() async {
     setState(() {
       currentPost["liked"] = !(currentPost["liked"] ?? false);
@@ -315,6 +358,21 @@ class _PostDetailPageState extends State<PostDetailPage> {
                       children: [
                         Text(_getCommentTime(c["time"]), style: const TextStyle(fontSize: 11, color: Colors.grey)),
                         const Spacer(),
+
+                        // 🌟 新增：删除评论按钮（仅当评论的昵称等于当前登录用户的昵称时才显示）
+                        if (c["name"] == nickname)
+                          GestureDetector(
+                            onTap: () {
+                              // 调用你刚才写的弹窗方法，传入 index 和 评论的 id
+                              _showDeleteCommentDialog(index, c["id"].toString());
+                            },
+                            child: const Padding(
+                              padding: EdgeInsets.only(right: 15.0), // 和右边的点赞按钮拉开一点距离
+                              child: Icon(Icons.delete_outline, size: 16, color: Colors.grey),
+                            ),
+                          ),
+
+                        // 下面是点赞按钮
                         GestureDetector(
                           onTap: () => likeComment(index),
                           child: Row(children: [
