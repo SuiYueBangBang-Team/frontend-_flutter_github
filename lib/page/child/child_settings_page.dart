@@ -54,11 +54,35 @@ class _ChildSettingsPageState extends State<ChildSettingsPage> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, elevation: 0),
             onPressed: () async {
-              // 🔒 TODO: 后端对接 - 调用修改资料接口
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.setString('nickname', editController.text);
-              setState(() => nickname = editController.text);
-              if (mounted) Navigator.pop(context);
+              String newName = editController.text.trim();
+              if (newName.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("用户名不能为空")));
+                return;
+              }
+
+              try {
+                // 调用后端接口，修改昵称
+                await ApiClient().post('/api/auth/update-nickname', data: {
+                  "nickname": newName
+                });
+
+                // 只有后端 API 返回成功，才修改本地持久化存储
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setString('nickname', newName);
+
+                setState(() {
+                  nickname = newName;
+                });
+
+                if (mounted) {
+                  Navigator.pop(context); // 关闭弹窗
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("昵称已修改")));
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("修改失败: $e")));
+                }
+              }
             },
             child: const Text("确定", style: TextStyle(color: Colors.white)),
           ),

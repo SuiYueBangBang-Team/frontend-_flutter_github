@@ -63,10 +63,12 @@ class _PostDetailPageState extends State<PostDetailPage> {
     currentPost["isMe"] = isCurrentUserPost;
 
     for (var comment in commentList) {
+      comment["nickname"] ??= "匿名用户";
+      comment["avatarUrl"] = comment["avatarUrl"] ?? comment["avatar"] ?? "";
       comment["liked"] ??= false;
       comment["likeCount"] ??= 0;
       comment["time"] ??= "";
-      comment["isAuthor"] = (comment["name"] == currentPost["nickname"]);
+      comment["isAuthor"] = comment["isAuthor"] ?? false;  //后端返回判断是否为发帖人
     }
 
     setState(() {});
@@ -93,15 +95,34 @@ class _PostDetailPageState extends State<PostDetailPage> {
     if (commentController.text.trim().isEmpty) return;
 
     try {
-      await ApiClient().post('/api/community/post/comment', data: {
+      var response = await ApiClient().post('/api/community/post/comment', data: {
         "postId": currentPost["postId"],
         "content": commentController.text.trim()
       });
 
+      // 解析后端返回的真实评论 ID
+      String realCommentId = "";
+      if (response != null) {
+        if (response is Map && response['data'] != null) {
+          realCommentId = response['data'].toString();
+        } else {
+          // 无论拦截器直接丢出来的是 int 还是 String，直接转字符串
+          realCommentId = response.toString();
+        }
+      }
+// 只有真正的极端情况才用时间戳防崩溃
+      if (realCommentId.isEmpty || realCommentId == "null") {
+        realCommentId = DateTime.now().millisecondsSinceEpoch.toString();
+        debugPrint("！！！评论id出错，兜底设置为时间戳！！！"
+                   "！！！评论id出错，兜底设置为时间戳！！！"
+                    "！！！评论id出错，兜底设置为时间戳！！！");
+      }
+
       bool isAuthor = (nickname == currentPost["nickname"] || nickname == currentPost["authorName"]);
+
       Map newComment = {
-        "id": DateTime.now().millisecondsSinceEpoch.toString(),
-        "name": nickname,
+        "id": realCommentId, // 评论ID
+        "nickname": nickname, // 用户昵称
         "avatarUrl": avatarUrl,
         "content": commentController.text.trim(),
         "time": _formatTime(DateTime.now()),
@@ -124,15 +145,16 @@ class _PostDetailPageState extends State<PostDetailPage> {
   }
 
 
-  // 🌟 新增：删除评论的网络请求
+
+// 🌟 删除评论的网络请求
   Future<void> _deleteComment(int index, String commentId) async {
     try {
-      // 注意：这里的接口路径 /api/community/comment/delete 需要换成你后端真实的评论删除接口
-      var response = await ApiClient().post('/api/community/comment/delete', data: {
+      await ApiClient().post('/api/community/comment/delete', data: {
         "id": commentId,
       });
 
-      if (response != null && mounted) {
+      // 只要没有进入 catch，就说明请求成功了！直接刷新 UI，不要判断 response != null
+      if (mounted) {
         setState(() {
           commentList.removeAt(index); // 从本地列表中移除该条评论
         });
@@ -145,7 +167,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
     }
   }
 
-  // 🌟 新增：删除评论确认弹窗
+  // 🌟 删除评论确认弹窗
   void _showDeleteCommentDialog(int index, String commentId) {
     showDialog(
       context: context,
@@ -345,7 +367,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                   children: [
                     Row(
                       children: [
-                        Text(c["name"], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        Text(c["nickname"], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                         const SizedBox(width: 6),
                         if (c["isAuthor"] == true)
                           Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(4)), child: const Text("作者", style: TextStyle(color: Colors.white, fontSize: 10))),
@@ -359,15 +381,14 @@ class _PostDetailPageState extends State<PostDetailPage> {
                         Text(_getCommentTime(c["time"]), style: const TextStyle(fontSize: 11, color: Colors.grey)),
                         const Spacer(),
 
-                        // 🌟 新增：删除评论按钮（仅当评论的昵称等于当前登录用户的昵称时才显示）
-                        if (c["name"] == nickname)
+                        // 删除评论按钮
+                        if (c["nickname"] == nickname)
                           GestureDetector(
                             onTap: () {
-                              // 调用你刚才写的弹窗方法，传入 index 和 评论的 id
                               _showDeleteCommentDialog(index, c["id"].toString());
                             },
                             child: const Padding(
-                              padding: EdgeInsets.only(right: 15.0), // 和右边的点赞按钮拉开一点距离
+                              padding: EdgeInsets.only(right: 15.0),
                               child: Icon(Icons.delete_outline, size: 16, color: Colors.grey),
                             ),
                           ),
