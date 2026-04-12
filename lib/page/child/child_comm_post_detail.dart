@@ -138,7 +138,6 @@ class _PostDetailPageState extends State<PostDetailPage> {
 
       commentController.clear();
       FocusScope.of(context).unfocus();
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("评论成功")));
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("评论失败: $e")));
     }
@@ -158,7 +157,12 @@ class _PostDetailPageState extends State<PostDetailPage> {
         setState(() {
           commentList.removeAt(index); // 从本地列表中移除该条评论
         });
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("评论已删除")));
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("评论已删除"),
+              duration: Duration(seconds: 1), // 设置为 1 秒后自动消失
+            )
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -167,18 +171,32 @@ class _PostDetailPageState extends State<PostDetailPage> {
     }
   }
 
+
   // 🌟 删除评论确认弹窗
   void _showDeleteCommentDialog(int index, String commentId) {
+    // 💡 第一道防线：在弹起确认框的瞬间，强制输入框失焦
+    commentFocusNode.unfocus();
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text("删除评论"),
         content: const Text("确定要删除这条评论吗？"),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("取消")),
+          TextButton(
+              onPressed: () {
+                Navigator.pop(context); // 先关闭弹窗
+                // 💡 第二道防线：关闭弹窗后，再次确保输入框被死死按住
+                commentFocusNode.unfocus();
+              },
+              child: const Text("取消")
+          ),
           TextButton(
             onPressed: () {
               Navigator.pop(context); // 先关闭弹窗
+              // 💡 第二道防线：关闭弹窗后，再次确保输入框被死死按住
+              commentFocusNode.unfocus();
+
               _deleteComment(index, commentId); // 再执行删除
             },
             child: const Text("删除", style: TextStyle(color: Colors.red)),
@@ -187,6 +205,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
       ),
     );
   }
+
 
   likePost() async {
     setState(() {
