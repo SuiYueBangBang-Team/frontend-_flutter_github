@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-
+import 'package:phone_java/utils/api_client.dart'; // 💡 引入请求客户端
+import 'package:shared_preferences/shared_preferences.dart';
 //  全局字体管理器
 class FontManager extends ChangeNotifier {
   static final FontManager _instance = FontManager._internal();
@@ -39,9 +40,24 @@ class UserProfileManager extends ChangeNotifier {
   int get avatarIndex => _avatarIndex;
   int get languageIndex => _languageIndex;
 
-  void setAvatar(int index) {
+  void setAvatar(int index) async {
+    if (_avatarIndex == index) return;
     _avatarIndex = index;
     notifyListeners();
+
+    try {
+      String newVoiceId = currentVoiceId;
+      // 1. 同步给云端数据库
+      await ApiClient().post('/api/auth/update-voice', data: {"voiceId": newVoiceId});
+
+      // 2. 💡 新增：同步保存到手机本地
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('voiceId', newVoiceId);
+
+      debugPrint("✅ 已同步新音色到云端和本地: $newVoiceId");
+    } catch (e) {
+      debugPrint("❌ 同步音色到云端失败: $e");
+    }
   }
 
   void setLanguage(int index) {
@@ -68,4 +84,24 @@ class UserProfileManager extends ChangeNotifier {
 
   // 💡 修改点 2：新增快捷获取当前选中音色 ID 的方法，给接口请求使用
   String get currentVoiceId => avatars[_avatarIndex]["voiceId"] as String;
+
+  // 💡 2. 新增方法：登录成功后，根据后端传回来的 voiceId，自动选中对应的头像
+  void syncVoiceIdFromBackend(String backendVoiceId) {
+    int index = avatars.indexWhere((avatar) => avatar["voiceId"] == backendVoiceId);
+    if (index != -1) {
+      _avatarIndex = index;
+      notifyListeners(); // 更新 UI，高亮长辈上次选的那个头像
+      debugPrint("✅ 已根据云端数据恢复长辈头像选择");
+    }
+  }
+
+  // 💡 1. 新增：App 启动时从本地读取上次保存的音色
+  Future<void> loadLocalVoiceId() async {
+    final prefs = await SharedPreferences.getInstance();
+    String? savedVoiceId = prefs.getString('voiceId');
+    if (savedVoiceId != null) {
+      syncVoiceIdFromBackend(savedVoiceId); // 复用之前的恢复方法
+      debugPrint("✅ App 启动，已从本地缓存恢复长辈音色: $savedVoiceId");
+    }
+  }
 }

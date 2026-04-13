@@ -44,6 +44,11 @@ class _FaceLoginPageState extends State<FaceLoginPage> {
 
       String token = response['token'];
       String userId = response['userId'].toString();
+      // 1. 提取刷脸成功后返回的专属音色
+      String userVoiceId = response['data']['voiceId'] ?? "longhuhu";
+
+      // 2. 同步给全局管理器
+      UserProfileManager().syncVoiceIdFromBackend(userVoiceId);
 
       // 保存登录态
       ApiClient.globalToken = token;
@@ -51,6 +56,7 @@ class _FaceLoginPageState extends State<FaceLoginPage> {
       await prefs.setString('token', token);
       await prefs.setString('userId', userId);
       await prefs.setString('role', 'ELDER');
+      await prefs.setString('voiceId', userVoiceId);
 
       setState(() {
         _statusText = "识别成功！欢迎回来。";

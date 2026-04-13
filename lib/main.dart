@@ -39,6 +39,7 @@ Future<void> main() async {
       'gOk4AIifU6VZZTRrwxoMlWOXyjt1DCPX', BMF_COORD_TYPE.BD09LL);
 
 
+
   // 1. 读取本地缓存
   final prefs = await SharedPreferences.getInstance();
   final savedToken = prefs.getString('token');
@@ -59,6 +60,9 @@ Future<void> main() async {
     // 如果没有 Token，才进入初始的角色选择/登录页面
     initialRoute = '/';
   }
+
+  // 💡 新增：通知状态管理器立刻去读取本地保存的音色
+  await UserProfileManager().loadLocalVoiceId();
 
   runApp(const MyApp());
 }

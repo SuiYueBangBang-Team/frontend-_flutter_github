@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:phone_java/utils/api_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:phone_java/app_fonts.dart'; // 💡 引入全局状态管理器
 
 class PhoneInputPage extends StatefulWidget {
   const PhoneInputPage({super.key});
@@ -129,6 +130,7 @@ class _PhoneInputPageState extends State<PhoneInputPage> {
         });
         String token = response['token'];
         String userId = response['userId'].toString();
+        String userVoiceId = response['voiceId']?.toString() ?? "longhuhu";
 
         ApiClient.globalToken = token;
 
@@ -137,6 +139,8 @@ class _PhoneInputPageState extends State<PhoneInputPage> {
         await prefs.setString('userId', userId);
         await prefs.setString('userPhone', currentPhone);
         await prefs.setString('role', role);
+        // 💡 新增这行：将音色也永久保存在手机本地！
+        await prefs.setString('voiceId', userVoiceId);
 
         _showSnackBar("验证成功！");
 
@@ -145,6 +149,7 @@ class _PhoneInputPageState extends State<PhoneInputPage> {
           if (role == 'CHILD') {
             Navigator.pushNamedAndRemoveUntil(context, '/child_index', (route) => false);
           } else {
+            UserProfileManager().syncVoiceIdFromBackend(userVoiceId);
             Navigator.pushNamed(context, '/avatar');
           }
         }
