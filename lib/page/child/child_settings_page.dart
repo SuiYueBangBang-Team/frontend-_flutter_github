@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart'; // 💡 新增：用于调用相机
-import 'package:dio/dio.dart'; // 💡 新增：用于构建 FormData
+import 'package:image_picker/image_picker.dart'; // 用于调用相机
+import 'package:dio/dio.dart'; // 用于构建 FormData
 import 'package:phone_java/app_fonts.dart';
 import 'package:phone_java/utils/api_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:image_cropper/image_cropper.dart'; // 引入裁剪库
+import 'dart:io'; // 用于处理文件
+import 'child_community_page.dart';
 
 class ChildSettingsPage extends StatefulWidget {
   const ChildSettingsPage({super.key});
@@ -20,18 +23,161 @@ class _ChildSettingsPageState extends State<ChildSettingsPage> {
   @override
   void initState() {
     super.initState();
-    _loadUserInfo();
+    _loadUserInfo(); // 先读缓存，保证加载速度
+    _refreshUserInfo(); // 后调接口，保证数据准确
   }
 
-  Future<void> _loadUserInfo() async {
+  // 读取本地缓存
+ void  _loadUserInfo() async {
     final prefs = await SharedPreferences.getInstance();
-    // 💡 修复点：使用 ?? "" 兜底，防止出现 type 'Null' is not a subtype of type 'String' 的报错
     setState(() {
+      nickname = prefs.getString('nickname') ?? "用户";
       userPhone = prefs.getString('userPhone') ?? "未登录";
-      nickname = prefs.getString('nickname') ?? "";
       avatarUrl = prefs.getString('avatarUrl') ?? "";
     });
   }
+
+  // 从后端拉取最新数据
+  Future<void> _refreshUserInfo() async {
+    try {
+      var response = await ApiClient().get('/api/auth/userInfo');
+      // 💡 核心修复：因为 ApiClient 已经返回了真实数据，response 直接就是 User 字典
+      if (response != null) {
+        var data = response; // 👈 直接赋值，不要再去取 response['data'] 了
+        final prefs = await SharedPreferences.getInstance();
+
+        setState(() {
+          nickname = data['nickname'] ?? "匿名用户";
+          userPhone = data['phone'] ?? userPhone;
+          avatarUrl = data['avatar'] ?? "";
+        });
+
+        // 同步更新本地缓存，下次进入页面会更快
+        await prefs.setString('nickname', nickname);
+        await prefs.setString('userPhone', userPhone);
+        await prefs.setString('avatarUrl', avatarUrl);
+      }
+    } catch (e) {
+      debugPrint("同步用户信息失败: $e");
+    }
+  }
+
+
+  // 弹窗选择拍照或相册
+  void _showAvatarPicker() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => SafeArea(
+        child: Wrap(
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Text("修改头像", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library, color: Colors.blue),
+              title: const Text('从相册选择'),
+              onTap: () {
+                Navigator.pop(context);
+                _uploadAvatarTask(ImageSource.gallery);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt, color: Colors.orange),
+              title: const Text('拍照'),
+              onTap: () {
+                Navigator.pop(context);
+                _uploadAvatarTask(ImageSource.camera);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 选图 -> 裁剪 -> 上传 -> 更新的完整流程
+  Future<void> _uploadAvatarTask(ImageSource source) async {
+    try {
+      // 1. 调用 image_picker 选图 (获取原始图片)
+      final picker = ImagePicker();
+      final XFile? pickedFile = await picker.pickImage(source: source);
+      if (pickedFile == null) return;
+
+      // 调用 image_cropper 进行裁剪
+      final CroppedFile? croppedFile = await ImageCropper().cropImage(
+        sourcePath: pickedFile.path, // 传入原始图片路径
+        uiSettings: [
+          // Android 端设置
+          AndroidUiSettings(
+            toolbarTitle: '裁剪头像',
+            toolbarColor: Colors.blueGrey,
+            toolbarWidgetColor: Colors.white,
+            initAspectRatio: CropAspectRatioPreset.square, // 初始化为 1:1
+            lockAspectRatio: true, // 锁定比例，不能随意拉伸
+            aspectRatioPresets: [CropAspectRatioPreset.square], // 💡 新版：强制 1:1 移到了这里
+          ),
+          // iOS 端设置
+          IOSUiSettings(
+            title: '裁剪头像',
+            aspectRatioLockEnabled: true, // 锁定比例
+            aspectRatioPresets: [CropAspectRatioPreset.square], // 💡 新版：强制 1:1 移到了这里
+            doneButtonTitle: '完成',
+            cancelButtonTitle: '取消',
+          ),
+        ],
+      );
+
+      // 如果用户取消了裁剪，整个流程终止
+      if (croppedFile == null) return;
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("正在上传头像...")));
+
+      // 3. 构造 FormData 并上传图片 (💡 注意：这里使用的是裁剪后的 croppedFile)
+      FormData formData = FormData.fromMap({
+        // 从裁剪后的文件路径创建一个新的上传文件
+        "file": await MultipartFile.fromFile(croppedFile.path, filename: "avatar.jpg"),
+      });
+
+      // 复用之前的图片上传接口
+      var uploadRes = await ApiClient().post('/api/upload/image', data: formData);
+
+      // 解析返回的图片 URL
+      String newAvatarUrl = "";
+      if (uploadRes != null) {
+        newAvatarUrl = uploadRes is Map ? uploadRes['data'].toString() : uploadRes.toString();
+      }
+
+      if (newAvatarUrl.isEmpty || newAvatarUrl == "null") {
+        throw Exception("获取上传后的图片地址失败");
+      }
+
+      // 4. 调用后端接口更新用户表中的 avatar 字段 (保持不变)
+      await ApiClient().post('/api/auth/update-avatar', data: {
+        "avatar": newAvatarUrl
+      });
+
+      // 5. 更新本地 SharedPreferences 和 UI (保持不变)
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('avatarUrl', newAvatarUrl);
+
+      setState(() {
+        avatarUrl = newAvatarUrl;
+      });
+      profileUpdateNotifier.value = true;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("头像修改成功")));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("头像修改失败: $e")));
+      }
+    }
+  }
+
+
 
   // 修改昵称的弹窗
   void _showEditNicknameDialog() {
@@ -54,11 +200,36 @@ class _ChildSettingsPageState extends State<ChildSettingsPage> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, elevation: 0),
             onPressed: () async {
-              // 🔒 TODO: 后端对接 - 调用修改资料接口
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.setString('nickname', editController.text);
-              setState(() => nickname = editController.text);
-              if (mounted) Navigator.pop(context);
+              String newName = editController.text.trim();
+              if (newName.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("用户名不能为空")));
+                return;
+              }
+
+              try {
+                // 调用后端接口，修改昵称
+                await ApiClient().post('/api/auth/update-nickname', data: {
+                  "nickname": newName
+                });
+
+                // 只有后端 API 返回成功，才修改本地持久化存储
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setString('nickname', newName);
+
+                setState(() {
+                  nickname = newName;
+                });
+
+                if (mounted) {
+                  Navigator.pop(context); // 关闭弹窗
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("昵称已修改")));
+                  profileUpdateNotifier.value = true; //触发信号：通知社区页刷新
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("修改失败: $e")));
+                }
+              }
             },
             child: const Text("确定", style: TextStyle(color: Colors.white)),
           ),
@@ -179,10 +350,7 @@ class _ChildSettingsPageState extends State<ChildSettingsPage> {
                 const SizedBox(height: 10),
                 // 头像点击修改
                 GestureDetector(
-                  onTap: () {
-                    // 🔒 TODO: 对接图片选择器与上传接口
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("触发修改头像功能")));
-                  },
+                  onTap: _showAvatarPicker, // 💡 绑定选图弹窗方法
                   child: Container(
                     width: 110,
                     height: 110,
@@ -190,9 +358,14 @@ class _ChildSettingsPageState extends State<ChildSettingsPage> {
                       shape: BoxShape.circle,
                       color: Colors.blueGrey.shade50,
                       boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 5))],
-                      // 玻璃球图片可以替换为你 assets 中的图片，或者 NetworkImage
-                      image: const DecorationImage(
-                        image: AssetImage("assets/images/avatar_ball.png"), // 请确保图片路径正确
+                      // 动态判断：如果有网络头像就显示，没有就显示本地默认图
+                      image: avatarUrl.isNotEmpty
+                          ? DecorationImage(
+                        image: NetworkImage(avatarUrl),
+                        fit: BoxFit.cover,
+                      )
+                          : const DecorationImage(
+                        image: AssetImage("assets/images/avatar_ball.png"),
                         fit: BoxFit.cover,
                       ),
                     ),

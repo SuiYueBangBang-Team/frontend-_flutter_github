@@ -27,22 +27,25 @@ class ApiClient {
     _dio = Dio(options);
 
     _dio.interceptors.add(InterceptorsWrapper(
-      onRequest: (options, handler) {
-        // 💡 2. 核心修复：白名单接口（免登录）绝对不能带上旧的/无效的 Token！
+      // 加上 async，因为我们要异步读取本地缓存
+      onRequest: (options, handler) async {
         bool isAuthApi = options.path.contains('/api/auth/login') ||
             options.path.contains('/api/auth/face-login') ||
             options.path.contains('/api/auth/send-sms');
 
         if (isAuthApi) {
-          // 确保请求头中干净，没有 Authorization
+          // 白名单接口，确保请求头干净
           options.headers.remove('Authorization');
         } else {
-          // 💡 其他正常的业务接口，如果用户已登录，自动把 Token 塞入所有的请求头中
-          if (globalToken != null && globalToken!.isNotEmpty) {
-            options.headers["Authorization"] = globalToken;
+          // 每次请求前，直接从 SharedPreferences 拿最新的 Token
+          // 这样即使重启 APP，只要没退出登录，就绝不会丢 Token
+          final prefs = await SharedPreferences.getInstance();
+          String? token = prefs.getString('token');
+
+          if (token != null && token.isNotEmpty) {
+            options.headers["Authorization"] = token;
           }
         }
-
         // print("➡️ 发起请求: ${options.method} ${options.path}");
         // print("📦 请求参数: ${options.data ?? options.queryParameters}");
         // print("🎫 请求头: ${options.headers}");
@@ -53,25 +56,19 @@ class ApiClient {
         return handler.next(response);
       },
       onError: (DioException e, handler) async {
-        // print("❌ 请求异常: ${e.message}, 状态码: ${e.response?.statusCode}");
-
         // 当后端返回 401 (未登录或 Token 过期/无效) 时
         if (e.response?.statusCode == 401) {
-          // 1. 清理内存中的 Token
-          globalToken = null;
-
-          // 2. 清理本地缓存的 Token，防止下次打开 APP 又自动登录
+          // 清理本地缓存的 Token，防止无限死循环
           final prefs = await SharedPreferences.getInstance();
           await prefs.remove('token');
           await prefs.remove('userId');
           await prefs.remove('userPhone');
 
-          // 3. 使用全局路由键，强制清空路由栈并跳转到登录页
+          // 强制清空路由栈并跳转到登录页
           if (navigatorKey.currentState != null) {
             navigatorKey.currentState!.pushNamedAndRemoveUntil('/login', (route) => false);
           }
         }
-
         return handler.next(e);
       },
     ));
@@ -125,7 +122,8 @@ class ApiClient {
         if (data['code'] == 200) {
           return data['data'];
         }
-        String errorMsg = data['message'] ?? "未知服务器错误";
+        // 优先解析 'msg'，防止后端报错时前端拿到 null
+        String errorMsg = data['msg'] ?? data['message'] ?? "未知服务器错误";
         throw Exception(errorMsg);
       }
       return data;

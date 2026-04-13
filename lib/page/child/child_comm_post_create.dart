@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:image_picker/image_picker.dart';
 import 'package:dio/dio.dart';
 import '../../utils/api_client.dart'; // 引入请求客户端
+import '../../utils/location_service.dart'; // 引入单例服务
 
 class CreatePostPage extends StatefulWidget {
   const CreatePostPage({super.key});
@@ -35,12 +36,25 @@ class _CreatePostPageState extends State<CreatePostPage> {
     loadCurrentCity();
   }
 
-  /// 当前定位
+  /// 修改后的真实定位方法
   loadCurrentLocation() async {
     setState(() {
-      locationName = "广州应用科技学院（肇庆校区）";
+      locationName = "获取当前地址中...";
     });
+
+    // 调用新封装的精简定位方法
+    var locData = await LocationService().getSimplifiedLocation();
+
+    if (mounted) {
+      setState(() {
+        // locationName 只显示“XX市 · XX区”或“XX县 · XX村”
+        locationName = locData['display'];
+        // 顺便把城市名也更新了，用于后续的定位面板过滤
+        cityName = locData['city'] ?? "定位失败";
+      });
+    }
   }
+
 
   /// 当前城市
   loadCurrentCity() async {

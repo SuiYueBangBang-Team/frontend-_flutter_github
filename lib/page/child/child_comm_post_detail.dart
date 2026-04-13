@@ -63,10 +63,35 @@ class _PostDetailPageState extends State<PostDetailPage> {
     currentPost["isMe"] = isCurrentUserPost;
 
     for (var comment in commentList) {
+      comment["nickname"] ??= "匿名用户";
+      comment["avatarUrl"] = comment["avatarUrl"] ?? comment["avatar"] ?? "";
       comment["liked"] ??= false;
       comment["likeCount"] ??= 0;
       comment["time"] ??= "";
-      comment["isAuthor"] = (comment["name"] == currentPost["nickname"]);
+      comment["isAuthor"] = comment["isAuthor"] ?? false;  //后端返回判断是否为发帖人
+
+      // 拦截并格式化后端传来的iso标准的时间字符串
+      String rawTime = comment["time"]?.toString() ?? "";
+      // 如果发现时间里带有 "T"（说明是后端的原始 ISO 时间）
+      if (rawTime.contains("T")) {
+        try {
+          // 1. 解析成 Dart 的 DateTime 对象，并自动转成本地时区 (toLocal 解决 +00:00 时差问题)
+          DateTime dt = DateTime.parse(rawTime).toLocal();
+
+          // 2. 补零操作：如果分钟小于10，前面补个0 (比如 4:5 变成 4:05)
+          String minuteStr = dt.minute.toString().padLeft(2, '0');
+
+          // 3. 拼装成和刚发送时一模一样的格式："月-日 时:分"
+          comment["time"] = "${dt.month}-${dt.day} ${dt.hour}:$minuteStr";
+        } catch (e) {
+          // 如果解析失败，兜底保留原样
+          comment["time"] = rawTime;
+        }
+      } else {
+        // 如果没有 "T"（说明是刚发送的本地伪造评论），直接保留
+        comment["time"] ??= "";
+      }
+
     }
 
     setState(() {});
@@ -93,15 +118,34 @@ class _PostDetailPageState extends State<PostDetailPage> {
     if (commentController.text.trim().isEmpty) return;
 
     try {
-      await ApiClient().post('/api/community/post/comment', data: {
+      var response = await ApiClient().post('/api/community/post/comment', data: {
         "postId": currentPost["postId"],
         "content": commentController.text.trim()
       });
 
+      // 解析后端返回的真实评论 ID
+      String realCommentId = "";
+      if (response != null) {
+        if (response is Map && response['data'] != null) {
+          realCommentId = response['data'].toString();
+        } else {
+          // 无论拦截器直接丢出来的是 int 还是 String，直接转字符串
+          realCommentId = response.toString();
+        }
+      }
+// 只有真正的极端情况才用时间戳防崩溃
+      if (realCommentId.isEmpty || realCommentId == "null") {
+        realCommentId = DateTime.now().millisecondsSinceEpoch.toString();
+        debugPrint("！！！评论id出错，兜底设置为时间戳！！！"
+                   "！！！评论id出错，兜底设置为时间戳！！！"
+                    "！！！评论id出错，兜底设置为时间戳！！！");
+      }
+
       bool isAuthor = (nickname == currentPost["nickname"] || nickname == currentPost["authorName"]);
+
       Map newComment = {
-        "id": DateTime.now().millisecondsSinceEpoch.toString(),
-        "name": nickname,
+        "id": realCommentId, // 评论ID
+        "nickname": nickname, // 用户昵称
         "avatarUrl": avatarUrl,
         "content": commentController.text.trim(),
         "time": _formatTime(DateTime.now()),
@@ -117,11 +161,74 @@ class _PostDetailPageState extends State<PostDetailPage> {
 
       commentController.clear();
       FocusScope.of(context).unfocus();
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("评论成功")));
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("评论失败: $e")));
     }
   }
+
+
+
+// 🌟 删除评论的网络请求
+  Future<void> _deleteComment(int index, String commentId) async {
+    try {
+      await ApiClient().post('/api/community/comment/delete', data: {
+        "id": commentId,
+      });
+
+      // 只要没有进入 catch，就说明请求成功了！直接刷新 UI，不要判断 response != null
+      if (mounted) {
+        setState(() {
+          commentList.removeAt(index); // 从本地列表中移除该条评论
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("评论已删除"),
+              duration: Duration(milliseconds: 500), // 设置为 1 秒后自动消失
+            )
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("删除失败: $e")));
+      }
+    }
+  }
+
+
+  // 🌟 删除评论确认弹窗
+  void _showDeleteCommentDialog(int index, String commentId) {
+    // 💡 第一道防线：在弹起确认框的瞬间，强制输入框失焦
+    commentFocusNode.unfocus();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("删除评论"),
+        content: const Text("确定要删除这条评论吗？"),
+        actions: [
+          TextButton(
+              onPressed: () {
+                Navigator.pop(context); // 先关闭弹窗
+                // 💡 第二道防线：关闭弹窗后，再次确保输入框被死死按住
+                commentFocusNode.unfocus();
+              },
+              child: const Text("取消")
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context); // 先关闭弹窗
+              // 💡 第二道防线：关闭弹窗后，再次确保输入框被死死按住
+              commentFocusNode.unfocus();
+
+              _deleteComment(index, commentId); // 再执行删除
+            },
+            child: const Text("删除", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
 
   likePost() async {
     setState(() {
@@ -302,7 +409,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                   children: [
                     Row(
                       children: [
-                        Text(c["name"], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        Text(c["nickname"], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                         const SizedBox(width: 6),
                         if (c["isAuthor"] == true)
                           Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(4)), child: const Text("作者", style: TextStyle(color: Colors.white, fontSize: 10))),
@@ -315,6 +422,20 @@ class _PostDetailPageState extends State<PostDetailPage> {
                       children: [
                         Text(_getCommentTime(c["time"]), style: const TextStyle(fontSize: 11, color: Colors.grey)),
                         const Spacer(),
+
+                        // 删除评论按钮
+                        if (c["nickname"] == nickname)
+                          GestureDetector(
+                            onTap: () {
+                              _showDeleteCommentDialog(index, c["id"].toString());
+                            },
+                            child: const Padding(
+                              padding: EdgeInsets.only(right: 15.0),
+                              child: Icon(Icons.delete_outline, size: 16, color: Colors.grey),
+                            ),
+                          ),
+
+                        // 下面是点赞按钮
                         GestureDetector(
                           onTap: () => likeComment(index),
                           child: Row(children: [

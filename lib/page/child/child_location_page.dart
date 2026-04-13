@@ -11,7 +11,7 @@ import 'package:flutter_bmflocation/flutter_bmflocation.dart';
 import 'package:permission_handler/permission_handler.dart'; // 用于申请定位权限
 
 import 'dart:math';
-
+import '../../utils/location_service.dart'; // 新增引入
 
 class ChildLocationPage extends StatefulWidget {
   const ChildLocationPage({super.key});
@@ -27,66 +27,8 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
   //  新增：百度地图控制器
   BMFMapController? myMapController;
 
-  // 初始化定位插件类
-  final LocationFlutterPlugin _locationPlugin = LocationFlutterPlugin(); //
   bool _isFirstLocation = true; // 用于首次定位时移动地图视角
 
-// 请求定位权限
-  Future<void> _requestPermissionAndLocate() async {
-    PermissionStatus status = await Permission.location.request();
-    if (status.isGranted) {
-      _initLocation();
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("需要定位权限才能显示您的当前位置")));
-      }
-    }
-  }
-
-  // 初始化并开启真实定位
-  void _initLocation() async {
-    try {
-      debugPrint("📌 定位流程 1: 正在设置隐私政策...");
-      _locationPlugin.setAgreePrivacy(true);
-
-      debugPrint("📌 定位流程 2: 正在初始化参数...");
-      BaiduLocationAndroidOption androidOption = BaiduLocationAndroidOption(
-        locationMode: BMFLocationMode.hightAccuracy,
-        isNeedAddress: true,
-        openGps: true,
-        coordType: BMFLocationCoordType.bd09ll,
-        scanspan: 4000,
-      );
-      await _locationPlugin.prepareLoc(androidOption.getMap(), {});
-
-      debugPrint("📌 定位流程 3: 正在注册定位回调...");
-      _locationPlugin.seriesLocationCallback(callback: (BaiduLocation result) {
-        //  无论成功失败，只要百度给回应了，就会打印这句话
-        debugPrint("📍 百度定位回调到达! 错误码=${result.errorCode}, 经度=${result.longitude}, 纬度=${result.latitude}");
-
-        if (!mounted) return;
-        if (result.latitude != null && result.longitude != null && result.latitude! > 1.0) {
-          setState(() {
-            myLocation['lat'] = result.latitude!;
-            myLocation['lng'] = result.longitude!;
-          });
-          _updateMapOverlays();
-          if (_isFirstLocation && myMapController != null) {
-            _moveToVisibleCenter(result.latitude!, result.longitude!);
-            _isFirstLocation = false;
-          }
-        }
-      });
-
-      debugPrint("📌 定位流程 4: 发送启动定位指令...");
-      await _locationPlugin.startLocation();
-      debugPrint("📌 定位流程 5: 启动指令发送成功，等待百度回调...");
-
-    } catch (e) {
-      debugPrint("❌ 定位流程发生异常: $e");
-    }
-  }
 
   Map<String, double> myLocation = {
     "lat": 23.27491548663772,
@@ -95,21 +37,48 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
 
   Timer? _realtimeTimer;
 
+
+  // 新增：专门接收 LocationService 传来的位置更新
+  void _onLocationUpdate(double lat, double lng) {
+    if (!mounted) return;
+    setState(() {
+      myLocation['lat'] = lat;
+      myLocation['lng'] = lng;
+    });
+    _updateMapOverlays();
+
+    if (_isFirstLocation && myMapController != null) {
+      _moveToVisibleCenter(lat, lng);
+      _isFirstLocation = false;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     _fetchLocationData();
-    _requestPermissionAndLocate(); // 启动真实定位
+
+    // 改变这里：使用提取出来的服务
+    LocationService().addListener(_onLocationUpdate); // 注册监听
+    LocationService().requestPermissionAndLocate().then((hasPermission) {
+      if (!hasPermission && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("需要定位权限才能显示您的当前位置")));
+      }
+    });
+
     _startRealtimeTracking();
   }
 
   @override
   void dispose() {
     _realtimeTimer?.cancel();
-    // 停止定位，防止内存泄漏
-    _locationPlugin.stopLocation(); // [cite: 20]
+    // 改变这里：页面销毁时只需移除当前页面的监听，不再强制 stopLocation 杀死插件
+    // 因为其他页面（如发帖页）可能还在使用定位
+    LocationService().removeListener(_onLocationUpdate);
     super.dispose();
   }
+
 
   //  真实接口：获取已绑定的长辈设备列表
   //  isSilent 参数，用于控制是否显示转圈加载动画
