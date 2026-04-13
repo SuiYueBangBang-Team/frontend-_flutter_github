@@ -6,6 +6,7 @@ import 'package:phone_java/utils/api_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_cropper/image_cropper.dart'; // 引入裁剪库
 import 'dart:io'; // 用于处理文件
+import 'child_community_page.dart';
 
 class ChildSettingsPage extends StatefulWidget {
   const ChildSettingsPage({super.key});
@@ -22,17 +23,43 @@ class _ChildSettingsPageState extends State<ChildSettingsPage> {
   @override
   void initState() {
     super.initState();
-    _loadUserInfo();
+    _loadUserInfo(); // 先读缓存，保证加载速度
+    _refreshUserInfo(); // 后调接口，保证数据准确
   }
 
-  Future<void> _loadUserInfo() async {
+  // 读取本地缓存
+ void  _loadUserInfo() async {
     final prefs = await SharedPreferences.getInstance();
-    // 💡 修复点：使用 ?? "" 兜底，防止出现 type 'Null' is not a subtype of type 'String' 的报错
     setState(() {
+      nickname = prefs.getString('nickname') ?? "用户";
       userPhone = prefs.getString('userPhone') ?? "未登录";
-      nickname = prefs.getString('nickname') ?? "";
       avatarUrl = prefs.getString('avatarUrl') ?? "";
     });
+  }
+
+  // 从后端拉取最新数据
+  Future<void> _refreshUserInfo() async {
+    try {
+      var response = await ApiClient().get('/api/auth/userInfo');
+      // 💡 核心修复：因为 ApiClient 已经返回了真实数据，response 直接就是 User 字典
+      if (response != null) {
+        var data = response; // 👈 直接赋值，不要再去取 response['data'] 了
+        final prefs = await SharedPreferences.getInstance();
+
+        setState(() {
+          nickname = data['nickname'] ?? "匿名用户";
+          userPhone = data['phone'] ?? userPhone;
+          avatarUrl = data['avatar'] ?? "";
+        });
+
+        // 同步更新本地缓存，下次进入页面会更快
+        await prefs.setString('nickname', nickname);
+        await prefs.setString('userPhone', userPhone);
+        await prefs.setString('avatarUrl', avatarUrl);
+      }
+    } catch (e) {
+      debugPrint("同步用户信息失败: $e");
+    }
   }
 
 
@@ -139,7 +166,7 @@ class _ChildSettingsPageState extends State<ChildSettingsPage> {
       setState(() {
         avatarUrl = newAvatarUrl;
       });
-
+      profileUpdateNotifier.value = true;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("头像修改成功")));
       }
@@ -196,6 +223,7 @@ class _ChildSettingsPageState extends State<ChildSettingsPage> {
                 if (mounted) {
                   Navigator.pop(context); // 关闭弹窗
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("昵称已修改")));
+                  profileUpdateNotifier.value = true; //触发信号：通知社区页刷新
                 }
               } catch (e) {
                 if (mounted) {

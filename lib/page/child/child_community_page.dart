@@ -3,7 +3,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import '../../utils/api_client.dart';
 import 'child_comm_post_detail.dart';
-
+// 用于跨页面通知个人资料已更新
+final ValueNotifier<bool> profileUpdateNotifier = ValueNotifier(false);
 
 class ChildCommunityPage extends StatefulWidget {
   const ChildCommunityPage({super.key});
@@ -36,6 +37,25 @@ class _ChildCommunityPageState extends State<ChildCommunityPage> {
     super.initState();
     loadUserInfo();
     loadProvinceList();
+  // 一旦收到资料更新的信号，立刻静默刷新列表
+    profileUpdateNotifier.addListener(_onProfileUpdated);
+}
+
+// 处理刷新的逻辑
+void _onProfileUpdated() {
+  if (profileUpdateNotifier.value && mounted) {
+    loadUserInfo(); // 更新社区页本页的头像/昵称缓存
+    loadPostList(); // 重新向后端拉取最新的帖子和评论数据
+    profileUpdateNotifier.value = false; // 消费掉这个事件，重置状态
+  }
+}
+
+  @override
+  void dispose() {
+    // 在页面销毁时移除监听，防止内存泄漏
+    profileUpdateNotifier.removeListener(_onProfileUpdated);
+    searchController.dispose();
+    super.dispose();
   }
 
   @override

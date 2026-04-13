@@ -69,6 +69,29 @@ class _PostDetailPageState extends State<PostDetailPage> {
       comment["likeCount"] ??= 0;
       comment["time"] ??= "";
       comment["isAuthor"] = comment["isAuthor"] ?? false;  //后端返回判断是否为发帖人
+
+      // 拦截并格式化后端传来的iso标准的时间字符串
+      String rawTime = comment["time"]?.toString() ?? "";
+      // 如果发现时间里带有 "T"（说明是后端的原始 ISO 时间）
+      if (rawTime.contains("T")) {
+        try {
+          // 1. 解析成 Dart 的 DateTime 对象，并自动转成本地时区 (toLocal 解决 +00:00 时差问题)
+          DateTime dt = DateTime.parse(rawTime).toLocal();
+
+          // 2. 补零操作：如果分钟小于10，前面补个0 (比如 4:5 变成 4:05)
+          String minuteStr = dt.minute.toString().padLeft(2, '0');
+
+          // 3. 拼装成和刚发送时一模一样的格式："月-日 时:分"
+          comment["time"] = "${dt.month}-${dt.day} ${dt.hour}:$minuteStr";
+        } catch (e) {
+          // 如果解析失败，兜底保留原样
+          comment["time"] = rawTime;
+        }
+      } else {
+        // 如果没有 "T"（说明是刚发送的本地伪造评论），直接保留
+        comment["time"] ??= "";
+      }
+
     }
 
     setState(() {});
