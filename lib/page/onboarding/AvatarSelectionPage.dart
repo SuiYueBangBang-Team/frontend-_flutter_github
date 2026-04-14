@@ -94,31 +94,20 @@ class _AvatarSelectionPageState extends State<AvatarSelectionPage> {
 
                       // --- 语言选择部分 ---
                       const Text("选择您习惯的语言",
-                          style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87)),
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
                       const SizedBox(height: 12),
 
-                      GridView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: UserProfileManager.languages.length,
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          mainAxisSpacing: 10,
-                          crossAxisSpacing: 10,
-                          childAspectRatio: 2.2,
-                        ),
-                        itemBuilder: (context, index) {
-                          bool selected = userManager.languageIndex == index;
-                          return _buildLanguageItem(index, selected);
-                        },
+                      // 💡 修改点：将 GridView 替换为 Row 布局
+                      Row(
+                        children: [
+                          Expanded(child: _buildLanguageItem(0)),
+                          const SizedBox(width: 15),
+                          Expanded(child: _buildLanguageItem(1)),
+                        ],
                       ),
 
                       const SizedBox(height: 40),
 
-                      // --- 底部开始按钮 ---
                       SizedBox(
                         width: double.infinity,
                         height: 65,
@@ -126,22 +115,16 @@ class _AvatarSelectionPageState extends State<AvatarSelectionPage> {
                           onPressed: () => Navigator.pushNamed(context, "/home"),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.blueAccent,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(20)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                             elevation: 0,
                           ),
                           child: const FittedBox(
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.check_circle_rounded,
-                                    color: Colors.white, size: 24),
+                                Icon(Icons.check_circle_rounded, color: Colors.white, size: 24),
                                 SizedBox(width: 8),
-                                Text("开始使用帮帮助手",
-                                    style: TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.white)),
+                                Text("开始使用帮帮助手", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
                               ],
                             ),
                           ),
@@ -158,7 +141,6 @@ class _AvatarSelectionPageState extends State<AvatarSelectionPage> {
       },
     );
   }
-
   // 头像卡片
   Widget _buildAvatarItem(int index) {
     bool selected = userManager.avatarIndex == index;
@@ -218,29 +200,21 @@ class _AvatarSelectionPageState extends State<AvatarSelectionPage> {
   }
 
   // 语言选择项
-  Widget _buildLanguageItem(int index, bool selected) {
+  Widget _buildLanguageItem(int index) {
+    bool selected = userManager.languageIndex == index;
     return GestureDetector(
       onTap: () => userManager.setLanguage(index),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
+        height: 55, // 给定固定高度，方便点击
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: selected ? Colors.blueAccent : Colors.white,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-              color: selected ? Colors.blueAccent : Colors.grey.shade200,
-              width: 1),
+          border: Border.all(color: selected ? Colors.blueAccent : Colors.grey.shade200, width: selected ? 2 : 1),
         ),
-        child: FittedBox(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Text(UserProfileManager.languages[index],
-                style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-                    color: selected ? Colors.white : Colors.black87)),
-          ),
-        ),
+        child: Text(UserProfileManager.languages[index],
+            style: TextStyle(fontSize: 18, fontWeight: selected ? FontWeight.bold : FontWeight.normal, color: selected ? Colors.white : Colors.black87)),
       ),
     );
   }

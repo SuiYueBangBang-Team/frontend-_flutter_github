@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:phone_java/app_fonts.dart';
 
+import 'child_anti_fraud_page.dart';
 import 'child_community_page.dart';
 import 'child_health_page.dart';
 import 'child_location_page.dart';
-import 'child_settings_page.dart'; // 引入字体管理
+import 'child_settings_page.dart';
 
 class ChildIndexPage extends StatefulWidget {
   const ChildIndexPage({super.key});
@@ -48,6 +49,14 @@ class _ChildIndexPageState extends State<ChildIndexPage> {
       'page': const ChildCommunityPage(),
     },
     {
+      'title': '反诈守护',
+      'subtitle': '实时提醒，保护家人财产',
+      'icon': Icons.phone_callback_outlined, // 电话图案
+      'activeIcon': Icons.phone_callback_rounded,
+      'label': '反诈',
+      'page': const ChildAntiFraudPage(),
+    },
+    {
       'title': '系统设置',
       'subtitle': '账号隐私与功能管理',
       'icon': Icons.settings_outlined,
@@ -89,13 +98,13 @@ class _ChildIndexPageState extends State<ChildIndexPage> {
               children: _tabs.map((tab) => tab['page'] as Widget).toList(),
             ),
           ),
-          bottomNavigationBar: _buildFloatingNavigationBar(), // 使用新样式
+          bottomNavigationBar: _buildFloatingNavigationBar(),
         );
       },
     );
   }
 
-  // 自定义 AppBar（与 IndexPage 一致）
+  // 💡 自定义 AppBar，加入 FittedBox 防止标题在特大字体时溢出
   Widget _buildCustomAppBar(Map<String, dynamic> tab) {
     return Container(
       decoration: BoxDecoration(
@@ -106,45 +115,51 @@ class _ChildIndexPageState extends State<ChildIndexPage> {
         bottom: false,
         child: Row(
           children: [
-            const SizedBox(width: 90),
+            const SizedBox(width: 80), // 两边留白适当缩小一点，给中间腾位置
             Expanded(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(
-                    tab['title'] ?? '',
-                    style: TextStyle(
-                      fontSize: AppFonts.titleLarge,
-                      fontWeight: FontWeight.bold,
-                      color: gray800,
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      tab['title'] ?? '',
+                      style: TextStyle(
+                        fontSize: AppFonts.titleLarge,
+                        fontWeight: FontWeight.bold,
+                        color: gray800,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    tab['subtitle'] ?? '',
-                    style: TextStyle(
-                      fontSize: AppFonts.bodySmall,
-                      color: gray500,
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      tab['subtitle'] ?? '',
+                      style: TextStyle(
+                        fontSize: AppFonts.bodySmall,
+                        color: gray500,
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 90),
+            const SizedBox(width: 80),
           ],
         ),
       ),
     );
   }
 
-  // 底部导航栏：完全参考 IndexPage 的样式
+  // 💡 底部导航栏：调整边距和对齐方式以适配5个按钮
   Widget _buildFloatingNavigationBar() {
     return Container(
-      margin: const EdgeInsets.fromLTRB(20, 0, 20, 34),
-      height: 90, // 与 IndexPage 一致
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 30), // 略微缩小外边距以容纳5个按钮
+      height: 90,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(44), // 与 IndexPage 一致
+        borderRadius: BorderRadius.circular(44),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.1),
@@ -154,7 +169,7 @@ class _ChildIndexPageState extends State<ChildIndexPage> {
         ],
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly, // 均分剩余空间
         children: List.generate(_tabs.length, (index) {
           return _buildNavItem(index, _tabs[index]);
         }),
@@ -162,39 +177,44 @@ class _ChildIndexPageState extends State<ChildIndexPage> {
     );
   }
 
-  // 导航项构建（与 IndexPage 的 _buildNavItem 完全一致）
+  // 💡 导航项构建：加入 Flexible 和 FittedBox，调整内外边距
   Widget _buildNavItem(int index, Map<String, dynamic> tab) {
     bool isActive = _currentIndex == index;
-    return GestureDetector(
-      onTap: () => setState(() => _currentIndex = index),
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOutBack,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: isActive ? blue50 : Colors.transparent,
-          borderRadius: BorderRadius.circular(24),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              isActive ? tab['activeIcon'] : tab['icon'],
-              size: 30, // 与 IndexPage 一致
-              color: isActive ? blue600 : gray500,
-            ),
-            const SizedBox(height: 2),
-            Text(
-              tab['label'],
-              style: TextStyle(
-                fontSize: AppFonts.caption, // 使用 AppFonts
-                fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
+    return Flexible( // 确保每个 Item 在等分空间内，不会互相挤压
+      child: GestureDetector(
+        onTap: () => setState(() => _currentIndex = index),
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutBack,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8), // 减少内边距为5个按钮腾出空间
+          decoration: BoxDecoration(
+            color: isActive ? blue50 : Colors.transparent,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                isActive ? tab['activeIcon'] : tab['icon'],
+                size: 28, // 略微减小图标大小 (从30降到28)
                 color: isActive ? blue600 : gray500,
               ),
-            ),
-          ],
+              const SizedBox(height: 2),
+              FittedBox( // 防止特大字体时文字撑爆导航栏
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  tab['label'],
+                  style: TextStyle(
+                    fontSize: AppFonts.caption,
+                    fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
+                    color: isActive ? blue600 : gray500,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

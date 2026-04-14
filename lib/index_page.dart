@@ -1,3 +1,4 @@
+import 'package:phone_java/page/elder_anti_fraud_page.dart';
 import 'package:phone_java/page/family_page.dart';
 import 'package:phone_java/page/health_page.dart';
 import 'package:phone_java/page/home_content.dart';
@@ -64,6 +65,14 @@ class _IndexPageState extends State<IndexPage> {
         'activeIcon': Icons.people_rounded,
         'label': '家人',
         'page': const FamilyPage(),
+      },
+      {
+        'title': '反诈守护',
+        'subtitle': '帮帮守护您的钱袋子',
+        'icon': Icons.phone_callback_outlined, // 电话图案
+        'activeIcon': Icons.phone_callback_rounded,
+        'label': '反诈',
+        'page': const ElderAntiFraudPage(), // 这里之后替换为你实际的反诈页面
       },
       {
         'title': '设置',
@@ -238,7 +247,6 @@ class _IndexPageState extends State<IndexPage> {
   Widget build(BuildContext context) {
     final currentTab = _tabs[_currentIndex];
 
-    //  关键：同时监听字体缩放和用户信息（头像）的变化
     return ListenableBuilder(
       listenable: Listenable.merge([FontManager(), UserProfileManager()]),
       builder: (context, child) {
@@ -256,51 +264,52 @@ class _IndexPageState extends State<IndexPage> {
                 bottom: false,
                 child: Row(
                   children: [
-                    //  左侧：固定宽度 90，确保不挤压标题
                     SizedBox(
                       width: 90,
                       child: _currentIndex == 0
                           ? Center(
                         child: CircleAvatar(
-                          radius: 28, // 放大后的背景圈
+                          radius: 28,
                           backgroundColor: blue50,
                           child: Icon(
-                            //  从全局管理器获取当前选中的图标
                             UserProfileManager().currentAvatarIcon,
                             color: Colors.blueAccent,
-                            size: 38, // 放大后的图标大小
+                            size: 38,
                           ),
                         ),
                       )
                           : null,
                     ),
-
-                    // 中间：标题区域
                     Expanded(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Text(
-                            currentTab['title'],
-                            style: TextStyle(
-                                fontSize: AppFonts.titleLarge,
-                                fontWeight: FontWeight.bold,
-                                color: gray800
+                          // 💡 这里同样使用了 FittedBox 确保标题不溢出
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              currentTab['title'],
+                              style: TextStyle(
+                                  fontSize: AppFonts.titleLarge,
+                                  fontWeight: FontWeight.bold,
+                                  color: gray800
+                              ),
                             ),
                           ),
                           const SizedBox(height: 4),
-                          Text(
-                            currentTab['subtitle'],
-                            style: TextStyle(
-                                fontSize: AppFonts.bodySmall,
-                                color: gray500
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              currentTab['subtitle'],
+                              style: TextStyle(
+                                  fontSize: AppFonts.bodySmall,
+                                  color: gray500
+                              ),
                             ),
                           ),
                         ],
                       ),
                     ),
-
-                    //  右侧：固定宽度 90 的透明占位，实现标题绝对居中
                     const SizedBox(width: 90),
                   ],
                 ),
@@ -324,8 +333,8 @@ class _IndexPageState extends State<IndexPage> {
             ),
           ),
           bottomNavigationBar: Container(
-            margin: const EdgeInsets.fromLTRB(20, 0, 20, 34),
-            height: 90, // 稍微增高以适配大字体
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 30), // 略微缩小边距以容纳5个按钮
+            height: 90,
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(44),
@@ -338,7 +347,7 @@ class _IndexPageState extends State<IndexPage> {
               ],
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly, // 改为 SpaceEvenly 让5个分布更均匀
               children: List.generate(_tabs.length, (index) {
                 return _buildNavItem(index, _tabs[index]);
               }),
@@ -351,36 +360,42 @@ class _IndexPageState extends State<IndexPage> {
 
   Widget _buildNavItem(int index, Map<String, dynamic> tab) {
     bool isActive = _currentIndex == index;
-    return GestureDetector(
-      onTap: () => setState(() => _currentIndex = index),
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOutBack,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: isActive ? blue50 : Colors.transparent,
-          borderRadius: BorderRadius.circular(24),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-                isActive ? tab['activeIcon'] : tab['icon'],
-                size: 30,
-                color: isActive ? blue600 : gray500
-            ),
-            const SizedBox(height: 2),
-            Text(
-              tab['label'],
-              style: TextStyle(
-                fontSize: AppFonts.caption,
-                fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
-                color: isActive ? blue600 : gray500,
+    return Flexible( // 💡 使用 Flexible 包裹，确保每个项在等分空间内
+      child: GestureDetector(
+        onTap: () => setState(() => _currentIndex = index),
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutBack,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8), // 减少内边距
+          decoration: BoxDecoration(
+            color: isActive ? blue50 : Colors.transparent,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                  isActive ? tab['activeIcon'] : tab['icon'],
+                  size: 28, // 略微减小图标大小(30->28)，为文字腾出空间
+                  color: isActive ? blue600 : gray500
               ),
-            ),
-          ],
+              const SizedBox(height: 2),
+              // 💡 关键：底部文字增加 FittedBox，防止“反诈”或“设置”在特大字体下撑破导航栏
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  tab['label'],
+                  style: TextStyle(
+                    fontSize: AppFonts.caption,
+                    fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
+                    color: isActive ? blue600 : gray500,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

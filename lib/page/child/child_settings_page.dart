@@ -332,7 +332,7 @@ class _ChildSettingsPageState extends State<ChildSettingsPage> {
 
     ApiClient.globalToken = null;
     if (mounted) {
-      Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+      Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
     }
   }
 

@@ -31,7 +31,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
     //  3. 返回登录页
     if (mounted) {
-      Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+      Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
     }
   }
   Future<void> _handleSwitchAccount() async {
@@ -128,11 +128,11 @@ class _SettingsPageState extends State<SettingsPage> {
                     //  调整点：去掉网格自带的边距
                     _buildAvatarGrid(),
 
-                    const SizedBox(height: 10), // 紧凑处理
+                    const SizedBox(height: 10),
                     Text("选择帮帮语言", style: TextStyle(fontSize: AppFonts.bodyLarge, fontWeight: FontWeight.bold, color: Colors.black87)),
                     const SizedBox(height: 10),
-                    //  调整点：去掉网格自带的边距
-                    _buildLanguageGrid(),
+                    // 💡 修改点：调用新的左右布局方法
+                    _buildLanguageLayout(),
                   ],
                 ),
               );
@@ -255,37 +255,38 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   //  重点修改：设置 padding 为 EdgeInsets.zero
-  Widget _buildLanguageGrid() {
-    return GridView.builder(
-      shrinkWrap: true,
-      padding: EdgeInsets.zero, //  强制去除护城河
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: UserProfileManager.languages.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 10,
-        crossAxisSpacing: 10,
-        childAspectRatio: 2.2, // 恢复原本舒适比例
-      ),
-      itemBuilder: (context, index) {
-        bool selected = UserProfileManager().languageIndex == index;
-        return GestureDetector(
-          onTap: () => UserProfileManager().setLanguage(index),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: selected ? Colors.blueAccent : Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: selected ? Colors.blueAccent : Colors.grey.shade300),
-            ),
-            child: Text(
-              UserProfileManager.languages[index],
-              style: TextStyle(fontSize: AppFonts.bodySmall, color: selected ? Colors.white : Colors.black87),
-            ),
+  Widget _buildLanguageLayout() {
+    return Row(
+      children: [
+        Expanded(child: _buildSettingsLanguageItem(0)),
+        const SizedBox(width: 15),
+        Expanded(child: _buildSettingsLanguageItem(1)),
+      ],
+    );
+  }
+
+  Widget _buildSettingsLanguageItem(int index) {
+    bool selected = UserProfileManager().languageIndex == index;
+    return GestureDetector(
+      onTap: () => UserProfileManager().setLanguage(index),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        height: 48, // 适合设置页面的高度
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? Colors.blueAccent : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: selected ? Colors.blueAccent : Colors.grey.shade300, width: selected ? 2 : 1),
+        ),
+        child: Text(
+          UserProfileManager.languages[index],
+          style: TextStyle(
+              fontSize: AppFonts.bodySmall,
+              fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+              color: selected ? Colors.white : Colors.black87
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
