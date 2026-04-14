@@ -4,6 +4,8 @@ import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../utils/api_client.dart';
 import '../../app_fonts.dart';
+// 注意：如果在你的项目中 UserProfileManager 不在这个文件，请把这行引包补上，或者确认你已全局引入
+// import 'package:phone_java/utils/user_profile_manager.dart';
 
 class FaceLoginPage extends StatefulWidget {
   const FaceLoginPage({super.key});
@@ -44,10 +46,12 @@ class _FaceLoginPageState extends State<FaceLoginPage> {
 
       String token = response['token'];
       String userId = response['userId'].toString();
-      // 1. 提取刷脸成功后返回的专属音色
-      String userVoiceId = response['data']['voiceId'] ?? "longhuhu";
+      String userPhone = response['phone'] ?? "未知手机号";
 
-      // 2. 同步给全局管理器
+      // 💡 核心修复：因为 ApiClient 已经解了一层包，token 和 voiceId 是平级的，直接取即可！
+      String userVoiceId = response['voiceId'] ?? "longhuhu";
+
+      // 2. 同步给全局管理器 (请确保 UserProfileManager 存在并引入了包)
       UserProfileManager().syncVoiceIdFromBackend(userVoiceId);
 
       // 保存登录态
@@ -55,8 +59,9 @@ class _FaceLoginPageState extends State<FaceLoginPage> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('token', token);
       await prefs.setString('userId', userId);
+      await prefs.setString('userPhone', userPhone);
       await prefs.setString('role', 'ELDER');
-      await prefs.setString('voiceId', userVoiceId);
+      await prefs.setString('voiceId', userVoiceId); // 💡 保存音色到本地缓存
 
       setState(() {
         _statusText = "识别成功！欢迎回来。";

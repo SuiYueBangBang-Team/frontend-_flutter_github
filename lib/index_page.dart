@@ -12,6 +12,7 @@ import 'package:phone_java/utils/api_client.dart';
 import 'dart:async'; //  用于定时器
 import 'package:battery_plus/battery_plus.dart'; //  用于获取真实电量
 import 'package:volume_controller/volume_controller.dart'; //  用于获取真实系统音量
+import 'package:phone_java/utils/rustdesk_manager.dart'; // 导入 RustDeskManager
 
 class IndexPage extends StatefulWidget {
   const IndexPage({super.key});
@@ -31,6 +32,7 @@ class _IndexPageState extends State<IndexPage> {
   final Color blue50 = const Color(0xFFEFF6FF);
 
   late final List<Map<String, dynamic>> _tabs;
+  final GlobalKey<FamilyPageState> _familyPageKey = GlobalKey<FamilyPageState>();
 
   // 长辈端专属的静默后台定位插件
   final LocationFlutterPlugin _locationPlugin = LocationFlutterPlugin();
@@ -64,7 +66,7 @@ class _IndexPageState extends State<IndexPage> {
         'icon': Icons.people_outline_rounded,
         'activeIcon': Icons.people_rounded,
         'label': '家人',
-        'page': const FamilyPage(),
+        'page': FamilyPage(key: _familyPageKey),
       },
       {
         'title': '反诈守护',
@@ -87,6 +89,8 @@ class _IndexPageState extends State<IndexPage> {
     _requestPermissionAndStartReport();
     // 新增：立刻启动设备心跳后台轮询
     _startHeartbeatReport();
+    // 新增：初始化 RustDesk Host 服务并上报控制 ID
+    RustDeskManager().initHostService();
   }
 
   @override
@@ -98,8 +102,7 @@ class _IndexPageState extends State<IndexPage> {
     super.dispose();
   }
 
-
-// 优化的权限申请逻辑，两步走解决直接跳到设置请求始终位置的问题
+  // 优化的权限申请逻辑，两步走解决直接跳到设置请求始终位置的问题
   Future<void> _requestPermissionAndStartReport() async {
     // 1. 先像子女端一样，请求普通前台定位权限（会弹出系统默认的授权框）
     PermissionStatus status = await Permission.location.request();
@@ -233,9 +236,15 @@ class _IndexPageState extends State<IndexPage> {
 
       // 3. 发送给后端
       // 备注：后端接口要求传 deviceId，但底层实际使用的是 token 里的 userId，所以这里传 Elder_Device 占位即可
-      await ApiClient().post(
+      var res = await ApiClient().post(
           '/api/device/htbtreport?deviceId=Elder_Device&battery=$batteryLevel&volume_level=$volumeLevel'
       );
+
+      // 4. 处理后端下发的特殊指令（比如子女端发起的远程呼叫）
+      if (res != null && res is Map && res['command'] == 'WAKE_UP_REMOTE') {
+        String childName = res['childName'] ?? '您的家人';
+        _showRemoteWakeupAlert(childName);
+      }
 
       debugPrint("💓 [长辈端] 设备心跳上报成功！当前电量: $batteryLevel%, 当前音量: $volumeLevel% (30秒后下一次)");
     } catch (e) {
@@ -243,10 +252,53 @@ class _IndexPageState extends State<IndexPage> {
     }
   }
 
+  // 💡 弹出醒目的远程唤醒提示
+  void _showRemoteWakeupAlert(String childName) {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.phonelink_ring_rounded, color: Colors.blueAccent, size: 28),
+            const SizedBox(width: 8),
+            Expanded(child: Text("$childName 请求协助", style: const TextStyle(fontWeight: FontWeight.bold))),
+          ],
+        ),
+        content: Text(
+          "您的家人正在尝试连接您的手机。\n请点击下方按钮，允许屏幕共享与远程操作，以便家人更好地位您提供帮助。",
+          style: const TextStyle(fontSize: 16, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("拒绝", style: TextStyle(color: Colors.grey, fontSize: 16)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blueAccent,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            ),
+            onPressed: () async {
+              Navigator.pop(context);
+              // 同意后，拉起第三方远控引擎
+              await RustDeskManager().launchRemoteAppForeground();
+            },
+            child: const Text("允许控制", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentTab = _tabs[_currentIndex];
 
+    //  关键：同时监听字体缩放和用户信息（头像）的变化
     return ListenableBuilder(
       listenable: Listenable.merge([FontManager(), UserProfileManager()]),
       builder: (context, child) {
@@ -264,22 +316,26 @@ class _IndexPageState extends State<IndexPage> {
                 bottom: false,
                 child: Row(
                   children: [
+                    //  左侧：固定宽度 90，确保不挤压标题
                     SizedBox(
                       width: 90,
                       child: _currentIndex == 0
                           ? Center(
                         child: CircleAvatar(
-                          radius: 28,
+                          radius: 28, // 放大后的背景圈
                           backgroundColor: blue50,
                           child: Icon(
+                            //  从全局管理器获取当前选中的图标
                             UserProfileManager().currentAvatarIcon,
                             color: Colors.blueAccent,
-                            size: 38,
+                            size: 38, // 放大后的图标大小
                           ),
                         ),
                       )
                           : null,
                     ),
+
+                    // 中间：标题区域
                     Expanded(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -310,6 +366,8 @@ class _IndexPageState extends State<IndexPage> {
                         ],
                       ),
                     ),
+
+                    //  右侧：固定宽度 90 的透明占位，实现标题绝对居中
                     const SizedBox(width: 90),
                   ],
                 ),
@@ -362,7 +420,13 @@ class _IndexPageState extends State<IndexPage> {
     bool isActive = _currentIndex == index;
     return Flexible( // 💡 使用 Flexible 包裹，确保每个项在等分空间内
       child: GestureDetector(
-        onTap: () => setState(() => _currentIndex = index),
+        onTap: () {
+          setState(() => _currentIndex = index);
+          // 如果切换到了“家人互联”Tab，静默刷新数据，保证拉到最新的绑定记录
+          if (index == 2) {
+            _familyPageKey.currentState?.fetchMembers(isSilent: true);
+          }
+        },
         behavior: HitTestBehavior.opaque,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 300),
