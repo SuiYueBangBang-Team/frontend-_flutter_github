@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 用于通过 FileProvider 安全地共享下载的 APK 文件 -->
+    <external-files-path name="apk_downloads" path="Download/" />
+</paths>

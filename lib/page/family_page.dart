@@ -6,30 +6,32 @@ class FamilyPage extends StatefulWidget {
   const FamilyPage({super.key});
 
   @override
-  State<FamilyPage> createState() => _FamilyPageState();
+  State<FamilyPage> createState() => FamilyPageState();
 }
 
-class _FamilyPageState extends State<FamilyPage> {
+class FamilyPageState extends State<FamilyPage> {
   List<Map<String, dynamic>> familyMembers = [];
   bool isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _fetchMembers();
+    fetchMembers();
   }
 
-  Future<void> _fetchMembers() async {
-    setState(() => isLoading = true);
+  Future<void> fetchMembers({bool isSilent = false}) async {
+    if (!isSilent) setState(() => isLoading = true);
     try {
       var res = await ApiClient().get('/api/family/members');
-      setState(() {
-        familyMembers = List<Map<String, dynamic>>.from(res ?? []);
-      });
+      if (mounted) {
+        setState(() {
+          familyMembers = List<Map<String, dynamic>>.from(res ?? []);
+        });
+      }
     } catch (e) {
-      if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("数据加载失败")));
+      if(mounted && !isSilent) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("数据加载失败")));
     } finally {
-      setState(() => isLoading = false);
+      if (mounted && !isSilent) setState(() => isLoading = false);
     }
   }
 
@@ -42,8 +44,10 @@ class _FamilyPageState extends State<FamilyPage> {
       await ApiClient().delete('/api/family/members/${member['id']}');
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("已删除 ${member['name']}")));
     } catch (e) {
-      setState(() => familyMembers.insert(index, member)); // 失败则恢复
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("删除失败，请重试")));
+      if (mounted) {
+        setState(() => familyMembers.insert(index, member)); // 失败则恢复
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("删除失败，请重试")));
+      }
     }
   }
 
@@ -74,7 +78,7 @@ class _FamilyPageState extends State<FamilyPage> {
                   "avatar": ""
                 });
                 if(mounted) Navigator.pop(context);
-                _fetchMembers(); // 插入成功后立刻刷新列表
+                fetchMembers(); // 插入成功后立刻刷新列表
               } catch (e) {
                 if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("添加失败: $e")));
               }
@@ -91,7 +95,7 @@ class _FamilyPageState extends State<FamilyPage> {
     return Container(
       color: const Color(0xFFF8FAFC),
       child: RefreshIndicator(
-        onRefresh: _fetchMembers,
+        onRefresh: fetchMembers,
         child: isLoading && familyMembers.isEmpty
             ? const Center(child: CircularProgressIndicator())
             : ListView.builder(

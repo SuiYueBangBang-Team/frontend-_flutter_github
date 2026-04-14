@@ -5,8 +5,12 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 
 import androidx.annotation.NonNull;
+import androidx.core.content.FileProvider;
+
+import java.io.File;
 
 import java.util.List;
 
@@ -118,6 +122,59 @@ public class MainActivity extends FlutterActivity {
                         boolean recording = call.argument("recording");
                         FloatWindowService.updateRecordingState(MainActivity.this, recording);
                         result.success(true);
+                    } else {
+                        result.notImplemented();
+                    }
+                });
+
+        new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), "com.yourcompany.phone_java/rustdesk")
+                .setMethodCallHandler((call, result) -> {
+                    if ("isPackageInstalled".equals(call.method)) {
+                        String packageName = call.argument("packageName");
+                        boolean installed = isPackageInstalled(packageName);
+                        android.util.Log.d(TAG, packageName + " 是否已安装: " + installed);
+                        result.success(installed);
+                    } else if ("launchPackage".equals(call.method)) {
+                        String packageName = call.argument("packageName");
+                        Intent launchIntent = getPackageManager().getLaunchIntentForPackage(packageName);
+                        if (launchIntent != null) {
+                            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                            startActivity(launchIntent);
+                            android.util.Log.d(TAG, "✅ 已启动: " + packageName);
+                            result.success(true);
+                        } else {
+                            android.util.Log.e(TAG, "❌ 无法启动 " + packageName + "，可能未安装");
+                            result.success(false);
+                        }
+                    } else if ("installApk".equals(call.method)) {
+                        // 从 Flutter 传来的 APK 文件路径，触发系统安装器
+                        String filePath = call.argument("filePath");
+                        if (filePath != null) {
+                            try {
+                                File apkFile = new File(filePath);
+                                if (apkFile.exists()) {
+                                    Uri apkUri = FileProvider.getUriForFile(
+                                            MainActivity.this,
+                                            getApplicationContext().getPackageName() + ".fileprovider",
+                                            apkFile);
+                                    Intent installIntent = new Intent(Intent.ACTION_VIEW);
+                                    installIntent.setDataAndType(apkUri, "application/vnd.android.package-archive");
+                                    installIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                                    installIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                    startActivity(installIntent);
+                                    android.util.Log.d(TAG, "\u2705 \u5df2\u5524\u8d77\u7cfb\u7edf\u5b89\u88c5\u5668: " + filePath);
+                                    result.success(true);
+                                } else {
+                                    android.util.Log.e(TAG, "\u274c APK \u6587\u4ef6\u4e0d\u5b58\u5728: " + filePath);
+                                    result.success(false);
+                                }
+                            } catch (Exception e) {
+                                android.util.Log.e(TAG, "\u274c \u5b89\u88c5 APK \u5f02\u5e38: " + e.getMessage());
+                                result.error("INSTALL_ERROR", e.getMessage(), null);
+                            }
+                        } else {
+                            result.error("INVALID_ARGS", "filePath is null", null);
+                        }
                     } else {
                         result.notImplemented();
                     }
@@ -359,5 +416,15 @@ public class MainActivity extends FlutterActivity {
         }
         android.util.Log.w("MainActivity", "❌ 未找到匹配应用: " + appName);
         return false;
+    }
+
+    /** 检查指定包名的应用是否已安装 */
+    private boolean isPackageInstalled(String packageName) {
+        try {
+            getPackageManager().getPackageInfo(packageName, 0);
+            return true;
+        } catch (PackageManager.NameNotFoundException e) {
+            return false;
+        }
     }
 }
