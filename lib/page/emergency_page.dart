@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../app_fonts.dart';       //  使用相对路径
 import '../utils/api_client.dart'; //  引入请求客户端
 import 'package:flutter_bmflocation/flutter_bmflocation.dart'; //  引入百度定位
@@ -68,6 +69,22 @@ class _EmergencyPageState extends State<EmergencyPage> with SingleTickerProvider
       });
       if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("已自动发短信给紧急联系人")));
     } catch (e) {}
+    
+    // 倒计时结束后自动拨打120
+    _makePhoneCall('120');
+  }
+  
+  // 新增：直接拨打电话的方法
+  Future<void> _makePhoneCall(String phoneNumber) async {
+    try {
+      // 使用 url_launcher 拨打电话
+      final uri = Uri.parse('tel:$phoneNumber');
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+      }
+    } catch (e) {
+      print("拨打电话失败: $e");
+    }
   }
 
   Future<void> _handleImmediateCall() async {
@@ -78,6 +95,9 @@ class _EmergencyPageState extends State<EmergencyPage> with SingleTickerProvider
       });
       if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("正在拨打120并通知家属...")));
     } catch (e) {}
+    
+    // 立即拨打120
+    _makePhoneCall('120');
   }
 
   @override

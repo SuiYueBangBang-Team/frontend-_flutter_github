@@ -1,11 +1,15 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:phone_java/app_fonts.dart';
+import 'package:phone_java/components/emergency_alert_dialog.dart';
+import 'package:phone_java/main.dart' show navigatorKey;
 
 import 'child_anti_fraud_page.dart';
 import 'child_community_page.dart';
 import 'child_health_page.dart';
 import 'child_location_page.dart';
 import 'child_settings_page.dart';
+import '../../utils/api_client.dart';
 
 class ChildIndexPage extends StatefulWidget {
   const ChildIndexPage({super.key});
@@ -15,7 +19,65 @@ class ChildIndexPage extends StatefulWidget {
 }
 
 class _ChildIndexPageState extends State<ChildIndexPage> {
+  @override
+  void initState() {
+    super.initState();
+    _startEmergencyPolling();
+  }
+
+  @override
+  void dispose() {
+    _emergencyPollingTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startEmergencyPolling() {
+    _checkEmergency();
+    _emergencyPollingTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      _checkEmergency();
+    });
+  }
+
+  Future<void> _checkEmergency() async {
+    if (_isEmergencyDialogShowing) return;
+
+    try {
+      var data = await ApiClient().get('/api/emergency/check');
+      print("🔍 [紧急救助轮询] 收到响应: $data");
+
+      if (data != null && data['triggered'] == true && mounted) {
+        print("🚨 [紧急救助轮询] 检测到紧急救助！准备弹窗...");
+        print("   - 长辈信息: ${data['elderInfo']}");
+
+        _isEmergencyDialogShowing = true;
+        _emergencyPollingTimer?.cancel();
+
+        showDialog(
+          context: navigatorKey.currentContext ?? context,
+          barrierDismissible: false,
+          builder: (context) => EmergencyAlertDialog(
+            elderInfo: data['elderInfo'],
+            countdownSeconds: data['countdown'] ?? 10,
+            phoneNumber: '120',  // 子女端帮长辈拨打120急救
+          ),
+        ).then((_) {
+          print("✅ [紧急救助轮询] 弹窗已关闭");
+          _isEmergencyDialogShowing = false;
+          _startEmergencyPolling();
+        });
+      } else {
+        print("✅ [紧急救助轮询] 无紧急救助: triggered=${data?['triggered']}");
+      }
+    } catch (e) {
+      print("❌ [紧急救助轮询] 请求失败: $e");
+    }
+  }
+
   int _currentIndex = 0;
+
+  // 紧急救助轮询定时器
+  Timer? _emergencyPollingTimer;
+  bool _isEmergencyDialogShowing = false;
 
   final Color gray800 = const Color(0xFF1F2937);
   final Color gray500 = const Color(0xFF6B7280);

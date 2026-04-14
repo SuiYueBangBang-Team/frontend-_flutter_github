@@ -37,6 +37,7 @@ dependencies:
   permission_handler: ^12.0.1
   battery_plus: ^7.0.0      # 获取电量
   volume_controller: ^2.0.8  # 获取音量
+  vibration: ^2.0.1          # 震动功能
 
 
 
