@@ -1,6 +1,7 @@
+import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
 import '../../utils/api_client.dart';
 
 class PostDetailPage extends StatefulWidget {
@@ -20,12 +21,15 @@ class PostDetailPage extends StatefulWidget {
 }
 
 class _PostDetailPageState extends State<PostDetailPage> {
-  TextEditingController commentController = TextEditingController();
-  FocusNode commentFocusNode = FocusNode();
+  final TextEditingController commentController = TextEditingController();
+  final FocusNode commentFocusNode = FocusNode();
+  final ScrollController _scrollController = ScrollController();
   String nickname = "";
   String avatarUrl = "";
   Map currentPost = {};
   List commentList = [];
+  final Set<String> _likedCommentIds = <String>{};
+  String _likedCommentStorageKey = "";
 
   @override
   void initState() {
@@ -37,6 +41,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
   void dispose() {
     commentController.dispose();
     commentFocusNode.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -45,9 +50,20 @@ class _PostDetailPageState extends State<PostDetailPage> {
     nickname = prefs.getString('nickname') ?? "用户";
     avatarUrl = prefs.getString('avatarUrl') ?? "";
 
-    currentPost = Map.from(widget.post);
+    debugPrint('[PostDetail] loadData start postId=${widget.post["postId"]}, postIndex=${widget.postIndex}, nickname=$nickname');
 
-    var rawImages = currentPost["imagesList"] ?? currentPost["images"];
+    currentPost = Map.from(widget.post);
+    _likedCommentStorageKey = 'liked_comment_ids_${currentPost["postId"] ?? widget.postIndex}';
+    final savedLikedIds = prefs.getStringList(_likedCommentStorageKey) ?? <String>[];
+    _likedCommentIds
+      ..clear()
+      ..addAll(savedLikedIds);
+
+    await _refreshPostDetail();
+
+    debugPrint('[PostDetail] after refresh commentCount=${(currentPost["comments"] as List?)?.length ?? 0}, likedIds=${_likedCommentIds.length}');
+
+    final dynamic rawImages = currentPost["imagesList"] ?? currentPost["images"];
     if (rawImages is String) {
       currentPost["images"] = rawImages.isNotEmpty ? rawImages.split(',') : [];
     } else if (rawImages is List) {
@@ -56,45 +72,202 @@ class _PostDetailPageState extends State<PostDetailPage> {
       currentPost["images"] = [];
     }
 
-    currentPost["comments"] = List.from(currentPost["comments"] ?? []);
-    commentList = currentPost["comments"];
-
     bool isCurrentUserPost = (nickname == currentPost["nickname"]);
     currentPost["isMe"] = isCurrentUserPost;
 
-    for (var comment in commentList) {
-      comment["nickname"] ??= "匿名用户";
-      comment["avatarUrl"] = comment["avatarUrl"] ?? comment["avatar"] ?? "";
-      comment["liked"] ??= false;
-      comment["likeCount"] ??= 0;
-      comment["time"] ??= "";
-      comment["isAuthor"] = comment["isAuthor"] ?? false;  //后端返回判断是否为发帖人
+    setState(() {});
+  }
 
-      // 拦截并格式化后端传来的iso标准的时间字符串
-      String rawTime = comment["time"]?.toString() ?? "";
-      // 如果发现时间里带有 "T"（说明是后端的原始 ISO 时间）
-      if (rawTime.contains("T")) {
-        try {
-          // 1. 解析成 Dart 的 DateTime 对象，并自动转成本地时区 (toLocal 解决 +00:00 时差问题)
-          DateTime dt = DateTime.parse(rawTime).toLocal();
+  Future<void> _refreshPostDetail() async {
+    try {
+      debugPrint('[PostDetail] refresh request -> GET /api/community/post/detail?postId=${currentPost["postId"]}');
+      final response = await ApiClient().get('/api/community/post/detail?postId=${currentPost["postId"]}');
+      debugPrint('[PostDetail] refresh response type=${response.runtimeType} value=$response');
+      if (response == null || !mounted) return;
 
-          // 2. 补零操作：如果分钟小于10，前面补个0 (比如 4:5 变成 4:05)
-          String minuteStr = dt.minute.toString().padLeft(2, '0');
+      final Map<String, dynamic> freshPost = response is Map
+          ? Map<String, dynamic>.from(response['data'] ?? response)
+          : Map<String, dynamic>.from(response);
 
-          // 3. 拼装成和刚发送时一模一样的格式："月-日 时:分"
-          comment["time"] = "${dt.month}-${dt.day} ${dt.hour}:$minuteStr";
-        } catch (e) {
-          // 如果解析失败，兜底保留原样
-          comment["time"] = rawTime;
+      final dynamic freshCommentsRaw = freshPost['comments'] ?? freshPost['commentList'] ?? [];
+      final List freshComments = freshCommentsRaw is List ? List.from(freshCommentsRaw) : [];
+
+      freshPost['images'] = freshPost['images'] ?? freshPost['imagesList'] ?? [];
+      freshPost['comments'] = freshComments;
+      freshPost['isMe'] = (nickname == (freshPost['nickname'] ?? freshPost['authorName'] ?? ''));
+
+      _likedCommentIds.clear();
+      final List<Map<String, dynamic>> mergedComments = [];
+      for (final comment in freshComments) {
+        final Map<String, dynamic> c = Map<String, dynamic>.from(comment);
+        c['nickname'] ??= '匿名用户';
+        c['avatarUrl'] = c['avatarUrl'] ?? c['avatar'] ?? '';
+        c['likeCount'] = c['likeCount'] ?? 0;
+        c['isAuthor'] = c['isAuthor'] ?? false;
+
+        final String commentId = c['id']?.toString() ?? '';
+        final bool isBackendLiked = c['liked'] == true;
+        c['liked'] = isBackendLiked;
+
+        if (c['liked'] && commentId.isNotEmpty) {
+          _likedCommentIds.add(commentId);
         }
-      } else {
-        // 如果没有 "T"（说明是刚发送的本地伪造评论），直接保留
-        comment["time"] ??= "";
+        mergedComments.add(c);
       }
 
+      if (mounted) {
+        setState(() {
+          currentPost = freshPost;
+          commentList = mergedComments;
+        });
+        debugPrint('[PostDetail] refresh after like commentCount=${commentList.length}, likedIds=${_likedCommentIds.length}, postLiked=${currentPost["isLikedByMe"]}');
+      }
+
+      debugPrint('[PostDetail] refresh parsed comments=${freshComments.length}, likedIds=${_likedCommentIds.length}');
+      await _persistLikedCommentIds();
+    } catch (e) {
+      debugPrint('刷新帖子详情失败: $e');
+    }
+  }
+
+  likeComment(int commentIndex) async {
+    var comment = commentList[commentIndex];
+    final String commentId = comment["id"]?.toString() ?? "";
+    if (commentId.isEmpty) {
+      debugPrint('[PostDetail][likeComment] empty commentId at index=$commentIndex');
+      return;
     }
 
-    setState(() {});
+    // 🌟 此时可以直接放心地读取数据源状态
+    final bool isCurrentlyLiked = comment["liked"] == true;
+    debugPrint('[PostDetail][likeComment] tap index=$commentIndex id=$commentId currentlyLiked=$isCurrentlyLiked likeCount=${comment["likeCount"]} commentLikedIds=${_likedCommentIds.contains(commentId)}');
+
+    setState(() {
+      comment["liked"] = !isCurrentlyLiked;
+      if (comment["liked"]) {
+        comment["likeCount"] = (comment["likeCount"] ?? 0) + 1;
+        _likedCommentIds.add(commentId);
+      } else {
+        comment["likeCount"] = math.max(0, (comment["likeCount"] ?? 1) - 1);
+        _likedCommentIds.remove(commentId);
+      }
+    });
+    debugPrint('[PostDetail][likeComment] optimistic liked=${comment["liked"]} likeCount=${comment["likeCount"]}');
+    _persistLikedCommentIds();
+
+    try {
+      final res = await ApiClient().post('/api/community/comment/like?commentId=$commentId');
+      debugPrint('[PostDetail][likeComment] api response=$res');
+      await _refreshPostDetail();
+    } catch (e) {
+      // 🌟【修复核心 3】：完善网络失败时的 UI 回滚逻辑
+      if (mounted) {
+        setState(() {
+          comment["liked"] = isCurrentlyLiked;
+          if (isCurrentlyLiked) {
+            _likedCommentIds.add(commentId);
+            comment["likeCount"] = (comment["likeCount"] ?? 0) + 1;
+          } else {
+            _likedCommentIds.remove(commentId);
+            comment["likeCount"] = math.max(0, (comment["likeCount"] ?? 1) - 1);
+          }
+        });
+        debugPrint('[PostDetail][likeComment] rollback liked=$isCurrentlyLiked likeCount=${comment["likeCount"]}');
+        _persistLikedCommentIds();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("操作失败: $e")));
+      }
+      debugPrint("评论点赞操作失败: $e");
+    }
+  }
+
+  Widget buildCommentList() {
+    if (commentList.isEmpty) return const Center(child: Padding(padding: EdgeInsets.all(32), child: Text("暂无评论，快来抢沙发吧～", style: TextStyle(color: Colors.grey))));
+
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: commentList.length,
+      itemBuilder: (context, index) {
+        var c = commentList[index];
+        String commentAvatarUrl = c["avatarUrl"] ?? "";
+
+        // 🌟【修复核心 4】：UI 渲染只依赖 c["liked"] 一处，干脆利落
+        final bool isLiked = c["liked"] == true;
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: Colors.grey.shade200,
+                backgroundImage: commentAvatarUrl.isNotEmpty ? NetworkImage(commentAvatarUrl) : null,
+                child: commentAvatarUrl.isEmpty ? const Icon(Icons.person, color: Colors.grey, size: 24) : null,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(c["nickname"], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        const SizedBox(width: 6),
+                        if (c["isAuthor"] == true)
+                          Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(4)), child: const Text("作者", style: TextStyle(color: Colors.white, fontSize: 10))),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(c["content"], style: const TextStyle(fontSize: 14)),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Text(_getCommentTime(c["time"]), style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                        const Spacer(),
+
+                        if (c["nickname"] == nickname)
+                          GestureDetector(
+                            onTap: () {
+                              _showDeleteCommentDialog(index, c["id"].toString());
+                            },
+                            child: const Padding(
+                              padding: EdgeInsets.only(right: 15.0),
+                              child: Icon(Icons.delete_outline, size: 16, color: Colors.grey),
+                            ),
+                          ),
+
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            final String commentId = c["id"]?.toString() ?? "";
+                            debugPrint('[PostDetail][likeButton] tapped index=$index id=$commentId uiLiked=$isLiked backendLiked=${c["liked"] == true} likeCount=${c["likeCount"]}');
+                            likeComment(index);
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            child: Row(children: [
+                              Icon(isLiked ? Icons.favorite : Icons.favorite_border, size: 18, color: isLiked ? Colors.red : Colors.grey),
+                              const SizedBox(width: 4),
+                              Text("${c["likeCount"] ?? 0}", style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                            ]),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _persistLikedCommentIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_likedCommentStorageKey, _likedCommentIds.toList());
   }
 
   String _formatTime(DateTime time) {
@@ -117,11 +290,14 @@ class _PostDetailPageState extends State<PostDetailPage> {
   addComment() async {
     if (commentController.text.trim().isEmpty) return;
 
+    debugPrint('[PostDetail][addComment] tap content=${commentController.text.trim()} postId=${currentPost["postId"]}');
+
     try {
       var response = await ApiClient().post('/api/community/post/comment', data: {
         "postId": currentPost["postId"],
         "content": commentController.text.trim()
       });
+      debugPrint('[PostDetail][addComment] api response=$response');
 
       // 解析后端返回的真实评论 ID
       String realCommentId = "";
@@ -158,6 +334,18 @@ class _PostDetailPageState extends State<PostDetailPage> {
         commentList.add(newComment);
         currentPost["comments"] = commentList;
       });
+      debugPrint('[PostDetail][addComment] optimistic appended localCommentId=$realCommentId total=${commentList.length}');
+      await _refreshPostDetail();
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _scrollController.hasClients) {
+          _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOut,
+          );
+        }
+      });
 
       commentController.clear();
       FocusScope.of(context).unfocus();
@@ -180,6 +368,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
         setState(() {
           commentList.removeAt(index); // 从本地列表中移除该条评论
         });
+        await _refreshPostDetail();
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text("评论已删除"),
@@ -231,37 +420,30 @@ class _PostDetailPageState extends State<PostDetailPage> {
 
 
   likePost() async {
+    final bool currentLiked = currentPost["liked"] == true || currentPost["isLikedByMe"] == true;
+    final int currentLikeCount = (currentPost["likeCount"] ?? 0) as int;
+    debugPrint('[PostDetail][likePost] tap postId=${currentPost["postId"]} currentLiked=$currentLiked likeCount=$currentLikeCount');
+
     setState(() {
-      currentPost["liked"] = !(currentPost["liked"] ?? false);
-      if (currentPost["liked"]) {
-        currentPost["likeCount"] = (currentPost["likeCount"] ?? 0) + 1;
-      } else {
-        currentPost["likeCount"] = (currentPost["likeCount"] ?? 0) - 1;
-      }
+      final bool nextLiked = !currentLiked;
+      currentPost["liked"] = nextLiked;
+      currentPost["isLikedByMe"] = nextLiked;
+      currentPost["likeCount"] = nextLiked ? currentLikeCount + 1 : math.max(0, currentLikeCount - 1);
     });
 
     try {
-      await ApiClient().post('/api/community/post/like?postId=${currentPost["postId"]}');
+      final res = await ApiClient().post('/api/community/post/like?postId=${currentPost["postId"]}');
+      debugPrint('[PostDetail][likePost] api response=$res');
+      await _refreshPostDetail();
     } catch (e) {
-      debugPrint("帖子点赞失败");
-    }
-  }
-
-  likeComment(int commentIndex) async {
-    var comment = commentList[commentIndex];
-    setState(() {
-      comment["liked"] = !(comment["liked"] ?? false);
-      if (comment["liked"]) {
-        comment["likeCount"] = (comment["likeCount"] ?? 0) + 1;
-      } else {
-        comment["likeCount"] = (comment["likeCount"] ?? 0) - 1;
+      debugPrint("帖子点赞失败: $e");
+      if (mounted) {
+        setState(() {
+          currentPost["liked"] = currentLiked;
+          currentPost["isLikedByMe"] = currentLiked;
+          currentPost["likeCount"] = currentLikeCount;
+        });
       }
-    });
-
-    try {
-      await ApiClient().post('/api/community/comment/like?commentId=${comment["id"]}');
-    } catch (e) {
-      debugPrint("评论点赞失败");
     }
   }
 
@@ -301,7 +483,12 @@ class _PostDetailPageState extends State<PostDetailPage> {
   }
 
   Widget buildPostHeader() {
-    List images = currentPost["images"] ?? [];
+    final dynamic rawImages = currentPost["images"] ?? currentPost["imagesList"] ?? [];
+    final List images = rawImages is List
+        ? rawImages
+        : (rawImages is String && rawImages.isNotEmpty)
+            ? rawImages.split(',')
+            : <String>[];
 
     bool isMyPost = (widget.isFromMyPost || currentPost["isMe"] == true);
     String displayAvatarUrl = "";
@@ -363,13 +550,30 @@ class _PostDetailPageState extends State<PostDetailPage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              GestureDetector(onTap: () => commentFocusNode.requestFocus(), child: const Row(children: [Icon(Icons.chat_bubble_outline, color: Colors.grey), SizedBox(width: 6), Text("评论", style: TextStyle(color: Colors.grey))])),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  debugPrint('[PostDetail][commentIcon] tapped, currentFocus=${commentFocusNode.hasFocus}');
+                  FocusScope.of(context).unfocus();
+                  FocusManager.instance.primaryFocus?.unfocus();
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) {
+                      FocusScope.of(context).requestFocus(commentFocusNode);
+                      debugPrint('[PostDetail][commentIcon] afterRequestFocus hasFocus=${commentFocusNode.hasFocus}');
+                    }
+                  });
+                },
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(children: [Icon(Icons.chat_bubble_outline, color: Colors.grey), SizedBox(width: 6), Text("评论", style: TextStyle(color: Colors.grey))]),
+                ),
+              ),
               GestureDetector(
                 onTap: likePost,
                 child: Row(children: [
-                  Icon((currentPost["liked"] ?? false) ? Icons.thumb_up : Icons.thumb_up_alt_outlined, color: (currentPost["liked"] ?? false) ? Colors.blue : Colors.grey),
+                  Icon((currentPost["liked"] == true || currentPost["isLikedByMe"] == true) ? Icons.thumb_up : Icons.thumb_up_alt_outlined, color: (currentPost["liked"] == true || currentPost["isLikedByMe"] == true) ? Colors.blue : Colors.grey),
                   const SizedBox(width: 6),
-                  Text("${currentPost["likeCount"] ?? 0}", style: TextStyle(color: (currentPost["liked"] ?? false) ? Colors.blue : Colors.grey)),
+                  Text("${currentPost["likeCount"] ?? 0}", style: TextStyle(color: (currentPost["liked"] == true || currentPost["isLikedByMe"] == true) ? Colors.blue : Colors.grey)),
                 ]),
               ),
             ],
@@ -379,91 +583,28 @@ class _PostDetailPageState extends State<PostDetailPage> {
     );
   }
 
-  Widget buildCommentList() {
-    if (commentList.isEmpty) return const Center(child: Padding(padding: EdgeInsets.all(32), child: Text("暂无评论，快来抢沙发吧～", style: TextStyle(color: Colors.grey))));
-
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: commentList.length,
-      itemBuilder: (context, index) {
-        var c = commentList[index];
-        String commentAvatarUrl = c["avatarUrl"] ?? "";
-
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: Colors.grey.shade200,
-                //  完全废弃本地图片兜底
-                backgroundImage: commentAvatarUrl.isNotEmpty ? NetworkImage(commentAvatarUrl) : null,
-                child: commentAvatarUrl.isEmpty ? const Icon(Icons.person, color: Colors.grey, size: 24) : null,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(c["nickname"], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                        const SizedBox(width: 6),
-                        if (c["isAuthor"] == true)
-                          Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(4)), child: const Text("作者", style: TextStyle(color: Colors.white, fontSize: 10))),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(c["content"], style: const TextStyle(fontSize: 14)),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Text(_getCommentTime(c["time"]), style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                        const Spacer(),
-
-                        // 删除评论按钮
-                        if (c["nickname"] == nickname)
-                          GestureDetector(
-                            onTap: () {
-                              _showDeleteCommentDialog(index, c["id"].toString());
-                            },
-                            child: const Padding(
-                              padding: EdgeInsets.only(right: 15.0),
-                              child: Icon(Icons.delete_outline, size: 16, color: Colors.grey),
-                            ),
-                          ),
-
-                        // 下面是点赞按钮
-                        GestureDetector(
-                          onTap: () => likeComment(index),
-                          child: Row(children: [
-                            Icon((c["liked"] == true) ? Icons.favorite : Icons.favorite_border, size: 14, color: (c["liked"] == true) ? Colors.red : Colors.grey),
-                            const SizedBox(width: 4),
-                            Text("${c["likeCount"] ?? 0}", style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                          ]),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   Widget buildInputBar() {
     return Container(
       decoration: BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: Colors.grey.shade200))),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       child: Row(
         children: [
-          Expanded(child: TextField(controller: commentController, focusNode: commentFocusNode, decoration: const InputDecoration(hintText: "写评论...", border: InputBorder.none, contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10)))),
-          IconButton(icon: const Icon(Icons.send, color: Colors.blue), onPressed: addComment),
+          Expanded(
+            child: TextField(
+              controller: commentController,
+              focusNode: commentFocusNode,
+              textInputAction: TextInputAction.send,
+              onSubmitted: (_) => addComment(),
+              decoration: const InputDecoration(hintText: "写评论...", border: InputBorder.none, contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10)),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.send, color: Colors.blue),
+            onPressed: () {
+              debugPrint('[PostDetail][commentButton] clicked text=${commentController.text.trim()} focus=${commentFocusNode.hasFocus}');
+              addComment();
+            },
+          ),
         ],
       ),
     );
@@ -477,8 +618,14 @@ class _PostDetailPageState extends State<PostDetailPage> {
       body: Column(
         children: [
           Expanded(
-            child: SingleChildScrollView(
-              child: Column(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () {
+                FocusScope.of(context).unfocus();
+              },
+              child: SingleChildScrollView(
+                controller: _scrollController,
+                child: Column(
                 children: [
                   buildPostHeader(),
                   const SizedBox(height: 8),
@@ -496,6 +643,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                   buildCommentList(),
                   const SizedBox(height: 20),
                 ],
+                ),
               ),
             ),
           ),

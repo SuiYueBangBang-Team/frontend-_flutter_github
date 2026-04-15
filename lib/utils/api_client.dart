@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // 💡 引入 SharedPreferences
 import '../main.dart';
 
@@ -15,10 +16,10 @@ class ApiClient {
 
   ApiClient._internal() {
     BaseOptions options = BaseOptions(
-      // baseUrl: "http://10.0.2.2:9000", // 模拟测试(模拟机)/
+      baseUrl: "http://10.0.2.2:9000", // 模拟测试(模拟机)/
       // baseUrl: "http://127.0.0.1:9000",   // 无线测试(真机)
       // baseUrl: "http://10.96.122.150:9000",
-      baseUrl: "http://43.136.23.112:9000",
+      // baseUrl: "http://43.136.23.112:9000",
 
       connectTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 60),
@@ -77,19 +78,24 @@ class ApiClient {
 
   Future<dynamic> get(String path, {Map<String, dynamic>? queryParameters}) async {
     try {
+      debugPrint('➡️ GET $path query=$queryParameters');
       var response = await _dio.get(path, queryParameters: queryParameters);
+      debugPrint('✅ GET $path response=${response.data}');
       return _handleResponse(response);
     } catch (e) {
+      debugPrint('❌ GET $path error=$e');
       rethrow;
     }
   }
 
   Future<dynamic> post(String path, {dynamic data, Options? options}) async {
     try {
-      // 支持传入自定义 options（比如强制覆盖 headers）
+      debugPrint('➡️ POST $path data=$data');
       var response = await _dio.post(path, data: data, options: options);
+      debugPrint('✅ POST $path response=${response.data}');
       return _handleResponse(response);
     } catch (e) {
+      debugPrint('❌ POST $path error=$e');
       rethrow;
     }
   }

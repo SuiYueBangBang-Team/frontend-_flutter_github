@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_phone_direct_caller/flutter_phone_direct_caller.dart'; // 💡 引入直接拨号插件
 import '../app_fonts.dart';       // 💡 使用相对路径
 import '../utils/api_client.dart'; // 💡 引入请求客户端
 
@@ -47,6 +48,20 @@ class FamilyPageState extends State<FamilyPage> {
       if (mounted) {
         setState(() => familyMembers.insert(index, member)); // 失败则恢复
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("删除失败，请重试")));
+      }
+    }
+  }
+
+  // 💡 拨打电话功能：使用直接拨号插件，减少老人的操作步骤
+  Future<void> _makeCall(String phoneNumber) async {
+    if (phoneNumber.isEmpty) return;
+    try {
+      // 过滤掉非数字字符
+      String cleanNumber = phoneNumber.replaceAll(RegExp(r'[^0-9]'), '');
+      await FlutterPhoneDirectCaller.callNumber(cleanNumber);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("拨号失败: $e")));
       }
     }
   }
@@ -145,8 +160,11 @@ class FamilyPageState extends State<FamilyPage> {
     );
   }
 
-  // 💡 已清理：移除了底部的拨打电话 Row
   Widget _buildFamilyCard(int index, Map<String, dynamic> data) {
+    String phone = data['phone'] ?? "";
+    String avatarUrl = (data['avatarUrl'] ?? data['avatar'] ?? data['headImg'] ?? "").toString();
+    final ImageProvider? avatarProvider = avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 25),
       padding: const EdgeInsets.all(20),
@@ -157,15 +175,37 @@ class FamilyPageState extends State<FamilyPage> {
       ),
       child: Row(
         children: [
-          const CircleAvatar(radius: 40, backgroundColor: Color(0xFFE2E8F0), child: Icon(Icons.person, size: 50, color: Colors.orange)),
+          CircleAvatar(
+            radius: 40,
+            backgroundColor: const Color(0xFFE2E8F0),
+            backgroundImage: avatarProvider,
+            child: avatarProvider == null
+                ? const Icon(Icons.person, size: 50, color: Colors.orange)
+                : null,
+          ),
           const SizedBox(width: 20),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(data['name'] ?? "", style: const TextStyle(fontSize: AppFonts.titleLarge, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
-              const SizedBox(height: 4),
-              Text(data['phone'] ?? "", style: const TextStyle(fontSize: AppFonts.bodyLarge, color: Color(0xFF64748B))),
-            ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(data['name'] ?? "", style: const TextStyle(fontSize: AppFonts.titleLarge, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
+                const SizedBox(height: 4),
+                Text(phone, style: const TextStyle(fontSize: AppFonts.bodyLarge, color: Color(0xFF64748B))),
+              ],
+            ),
+          ),
+          // 💡 新增：一键拨打按钮，大尺寸且颜色醒目
+          GestureDetector(
+            onTap: () => _makeCall(phone),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFF6FF),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.blueAccent.withOpacity(0.2)),
+              ),
+              child: const Icon(Icons.phone_in_talk_rounded, color: Colors.blueAccent, size: 36),
+            ),
           ),
         ],
       ),

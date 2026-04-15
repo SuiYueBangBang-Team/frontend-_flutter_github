@@ -51,9 +51,9 @@ class _MyPostPageState extends State<MyPostPage> {
               post['time'] = "刚刚";
             }
 
-            post["liked"] = false;
+            post["liked"] = post["isLikedByMe"] == true;
             post["likeCount"] = post["likeCount"] ?? 0;
-            post["comments"] = [];
+            post["comments"] = post["comments"] ?? [];
             return post;
           }).toList();
         });
@@ -168,14 +168,33 @@ class _MyPostPageState extends State<MyPostPage> {
                   builder: (context, setState) {
                     return GestureDetector(
                       onTap: () async {
+                        bool oldLiked = liked;
                         setState(() {
                           liked = !liked;
                           if (liked) likeCount++; else likeCount--;
                           post["liked"] = liked;
                           post["likeCount"] = likeCount;
                         });
+                        try {
+                          await ApiClient().post('/api/community/post/like?postId=${post["postId"]}');
+                        } catch (e) {
+                          if (mounted) {
+                            setState(() {
+                              liked = oldLiked;
+                              if (liked) likeCount++; else likeCount--;
+                              post["liked"] = liked;
+                              post["likeCount"] = likeCount;
+                            });
+                          }
+                        }
                       },
-                      child: Row(children: [Icon(Icons.thumb_up, color: liked ? Colors.blue : Colors.grey, size: 20), const SizedBox(width: 6), Text("$likeCount", style: const TextStyle(fontSize: 14))]),
+                      child: Row(
+                        children: [
+                          Icon(Icons.thumb_up, color: liked ? Colors.blue : Colors.grey, size: 20),
+                          const SizedBox(width: 6),
+                          Text("$likeCount", style: const TextStyle(fontSize: 14)),
+                        ],
+                      ),
                     );
                   },
                 ),
