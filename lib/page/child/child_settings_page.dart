@@ -301,7 +301,7 @@ class _ChildSettingsPageState extends State<ChildSettingsPage> {
       // 4. 上传至后端
       FormData formData = FormData.fromMap({
         "file": await MultipartFile.fromFile(image.path, filename: "register_face.jpg"),
-        "memberId": selectedMember['id'], // 传入选择的长辈关联ID
+        "memberId": selectedMember['memberId'], // 传入family_member表的主键ID
       });
 
       await ApiClient().post('/api/family/face/register', data: formData);
