@@ -14,6 +14,7 @@ class _ChildHealthPageState extends State<ChildHealthPage> {
 
   List<Map<String, dynamic>> parentMeds = []; // 长辈的用药数据
   List<Map<String, dynamic>> myReminders = []; // 子女自己的提醒数据
+  List<Map<String, dynamic>> familyMembers = []; // 子女绑定的老人列表
   bool isLoading = true;
   int remindCount = 0; // 今日已提醒次数
 
@@ -30,6 +31,18 @@ class _ChildHealthPageState extends State<ChildHealthPage> {
     // ==========================================
     // 🌐 真实后端对接模式 (独立 try-catch 防止单个接口失败导致全盘崩溃)
     // ==========================================
+
+    // 0. 获取子女绑定的老人列表（用于新增用药时选择具体老人）
+    // 使用 /api/family/devices 接口，该接口只查 userId=当前子女 的记录，
+    // 不会把子女自己混入长辈列表，与定位页逻辑一致。
+    try {
+      var devicesData = await ApiClient().get('/api/family/devices');
+      if (devicesData != null) {
+        familyMembers = List<Map<String, dynamic>>.from(devicesData);
+      }
+    } catch (e) {
+      debugPrint("拉取家人列表失败: $e");
+    }
 
     // 1. 获取长辈用药列表
     try {
@@ -117,59 +130,101 @@ class _ChildHealthPageState extends State<ChildHealthPage> {
     TextEditingController nameController = TextEditingController();
     TextEditingController doseController = TextEditingController();
     TextEditingController timeController = TextEditingController();
+    int? selectedElderId;
+    String? selectedElderName;
+
+    final elderOptions = familyMembers.map((e) {
+      // /api/family/devices 返回字段：id=elderUserId，name=备注名
+      final id = e['id']?.toString() ?? '';
+      final name = (e['name'] ?? '').toString();
+      return DropdownMenuItem<String>(
+        value: id,
+        child: Text(name.isNotEmpty ? name : '未命名老人'),
+      );
+    }).toList();
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("帮长辈添加用药", style: TextStyle(fontWeight: FontWeight.bold)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: nameController, decoration: const InputDecoration(labelText: "药品名称 (如：降压药)")),
-            const SizedBox(height: 10),
-            TextField(controller: doseController, decoration: const InputDecoration(labelText: "用量 (如：1粒)")),
-            const SizedBox(height: 10),
-            TextField(
-              controller: timeController,
-              readOnly: true,
-              decoration: const InputDecoration(
-                labelText: "提醒时间", hintText: "点击选择时间",
-                suffixIcon: Icon(Icons.access_time_rounded, color: Colors.blueAccent),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text("帮长辈添加用药", style: TextStyle(fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (familyMembers.isNotEmpty) ...[
+                DropdownButtonFormField<String>(
+                  value: selectedElderId?.toString(),
+                  decoration: const InputDecoration(labelText: "选择老人"),
+                  items: elderOptions,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedElderId = value == null ? null : int.tryParse(value);
+                      selectedElderName = familyMembers.firstWhere(
+                        (e) => e['id']?.toString() == value,
+                        orElse: () => <String, dynamic>{'name': ''},
+                      )['name']?.toString();
+                    });
+                  },
+                ),
+                const SizedBox(height: 10),
+              ],
+              if (familyMembers.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 10),
+                  child: Text("请先在家人页面绑定老人，再添加用药提醒", style: TextStyle(color: Colors.redAccent)),
+                ),
+              TextField(controller: nameController, decoration: const InputDecoration(labelText: "药品名称 (如：降压药)")),
+              const SizedBox(height: 10),
+              TextField(controller: doseController, decoration: const InputDecoration(labelText: "用量 (如：1粒)")),
+              const SizedBox(height: 10),
+              TextField(
+                controller: timeController,
+                readOnly: true,
+                decoration: const InputDecoration(
+                  labelText: "提醒时间", hintText: "点击选择时间",
+                  suffixIcon: Icon(Icons.access_time_rounded, color: Colors.blueAccent),
+                ),
+                onTap: () async {
+                  TimeOfDay? picked = await showTimePicker(
+                    context: context, initialTime: TimeOfDay.now(),
+                    builder: (context, child) => MediaQuery(data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true), child: child!),
+                  );
+                  if (picked != null) {
+                    timeController.text = "${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}";
+                  }
+                },
               ),
-              onTap: () async {
-                TimeOfDay? picked = await showTimePicker(
-                  context: context, initialTime: TimeOfDay.now(),
-                  builder: (context, child) => MediaQuery(data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true), child: child!),
-                );
-                if (picked != null) {
-                  timeController.text = "${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}";
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text("取消")),
+            ElevatedButton(
+              onPressed: () async {
+                if (familyMembers.isNotEmpty && selectedElderId == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("请选择一位老人")));
+                  return;
+                }
+                if (nameController.text.isEmpty || doseController.text.isEmpty || timeController.text.isEmpty) return;
+
+                try {
+                  await ApiClient().post('/api/family/medications', data: {
+                    "name": nameController.text,
+                    "dose": doseController.text,
+                    "timeStr": timeController.text,
+                    "elderUserId": selectedElderId,
+                    "elderName": selectedElderName,
+                  });
+                  debugPrint('[ChildHealth] add medication success elderUserId=$selectedElderId elderName=$selectedElderName');
+                  if(mounted) Navigator.pop(context);
+                  _fetchHealthData();
+                } catch (e) {
+                  if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("添加失败: $e")));
                 }
               },
+              child: const Text("确定"),
             ),
           ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("取消")),
-          ElevatedButton(
-            onPressed: () async {
-              if (nameController.text.isEmpty || doseController.text.isEmpty || timeController.text.isEmpty) return;
-
-              try {
-                // 传给后端的 JSON 字段需与 MedicationRecord 对应 (timeStr)
-                await ApiClient().post('/api/family/medications', data: {
-                  "name": nameController.text,
-                  "dose": doseController.text,
-                  "timeStr": timeController.text,
-                });
-                if(mounted) Navigator.pop(context);
-                _fetchHealthData(); // 重新拉取刷新列表
-              } catch (e) {
-                if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("添加失败: $e")));
-              }
-            },
-            child: const Text("确定"),
-          ),
-        ],
       ),
     );
   }
@@ -218,7 +273,7 @@ class _ChildHealthPageState extends State<ChildHealthPage> {
                   "content": contentController.text, "timeStr": timeController.text,
                 });
                 if(mounted) Navigator.pop(context);
-                _fetchHealthData();
+                await _fetchHealthData();
               } catch (e) {
                 if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("添加失败: $e")));
               }

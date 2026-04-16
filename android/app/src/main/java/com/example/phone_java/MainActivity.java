@@ -34,6 +34,12 @@ public class MainActivity extends FlutterActivity {
     private static final String ACCESSIBILITY_CHANNEL = "com.yourcompany.phone_java/accessibility";
     private static final String FLOAT_CHANNEL = "com.yourcompany.phone_java/float_window";
 
+    private static final String TAG = "MainActivity";
+    private static final String WECHAT_PACKAGE = "com.tencent.mm";
+    private static final String AMAP_PACKAGE = "com.autonavi.minimap";
+    private static final String MEITUAN_PACKAGE = "com.sankuai.meituan";
+    private static final String PINDUODUO_PACKAGE = "com.xunmeng.pinduoduo";
+
     public static final String PREF_NAME = "com.example.phone_java";
     public static final String KEY_WECHAT_CONTACT = "wechat_contact";
     public static final String KEY_WECHAT_REQUEST_ID = "wechat_request_id";
@@ -372,11 +378,6 @@ public class MainActivity extends FlutterActivity {
         return false;
     }
 
-    private static final String TAG = "MainActivity";
-    private static final String WECHAT_PACKAGE = "com.tencent.mm";
-    private static final String AMAP_PACKAGE = "com.autonavi.minimap";
-    private static final String MEITUAN_PACKAGE = "com.sankuai.meituan";
-    private static final String PINDUODUO_PACKAGE = "com.xunmeng.pinduoduo";
 
     private boolean openAppByName(String appName) {
         android.util.Log.d("MainActivity", "openAppByName() 被调用，appName = " + appName);

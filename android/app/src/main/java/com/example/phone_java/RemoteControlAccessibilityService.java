@@ -3,98 +3,67 @@ package com.example.phone_java;
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.GestureDescription;
 import android.graphics.Path;
-import android.os.Build;
 import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
-import androidx.annotation.RequiresApi;
 
+/**
+ * 远程控制无障碍服务 - 专门用于执行全局手势（点击、滑动）
+ * 供 RustDesk/ToDesk 演示及控制使用
+ */
 public class RemoteControlAccessibilityService extends AccessibilityService {
-    private static final String TAG = "RemoteControlAccessibilityService";
+
+    private static final String TAG = "RemoteControl";
     private static RemoteControlAccessibilityService instance;
-
-    @Override
-    protected void onServiceConnected() {
-        super.onServiceConnected();
-        instance = this;
-        Log.d(TAG, "RustDesk 远程控制无障碍服务已连接");
-    }
-
-    @Override
-    public void onAccessibilityEvent(AccessibilityEvent event) {
-        // 在此处不需要主动监听特定页面的 UI 元素变化
-        // 这个 Service 主要是为了让 RustDesk 拥有执行全局滑动、点击的手势权限 (performGesture)
-    }
-
-    @Override
-    public void onInterrupt() {
-        Log.w(TAG, "RustDesk 远程控制无障碍服务被中断");
-    }
-
-    @Override
-    public boolean onUnbind(android.content.Intent intent) {
-        instance = null;
-        Log.d(TAG, "RustDesk 远程控制无障碍服务已解绑");
-        return super.onUnbind(intent);
-    }
 
     public static RemoteControlAccessibilityService getInstance() {
         return instance;
     }
 
-    /**
-     * 模拟全局点击事件（由 RustDesk 信令在接收到远端点击坐标时调用）
-     */
-    @RequiresApi(api = Build.VERSION_CODES.N)
-    public void simulateClick(float x, float y) {
-        Path clickPath = new Path();
-        clickPath.moveTo(x, y);
-        GestureDescription.StrokeDescription clickStroke = 
-                new GestureDescription.StrokeDescription(clickPath, 0, 100);
-        GestureDescription clickBuilder = new GestureDescription.Builder().addStroke(clickStroke).build();
+    @Override
+    protected void onServiceConnected() {
+        super.onServiceConnected();
+        instance = this;
+        Log.d(TAG, "远程控制无障碍服务已连接");
+    }
 
-        boolean dispatched = dispatchGesture(clickBuilder, new GestureResultCallback() {
-            @Override
-            public void onCompleted(GestureDescription gestureDescription) {
-                super.onCompleted(gestureDescription);
-                Log.d(TAG, "模拟点击成功: x=" + x + ", y=" + y);
-            }
+    @Override
+    public void onAccessibilityEvent(AccessibilityEvent event) {
+        // 远程控制服务通常不需要监听特定的 UI 事件，只需提供手势执行能力
+    }
 
-            @Override
-            public void onCancelled(GestureDescription gestureDescription) {
-                super.onCancelled(gestureDescription);
-                Log.d(TAG, "模拟点击取消: x=" + x + ", y=" + y);
-            }
-        }, null);
-        
-        Log.d(TAG, "dispatchGesture (Click) 触发结果: " + dispatched);
+    @Override
+    public void onInterrupt() {
+        Log.w(TAG, "远程控制服务被中断");
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        instance = null;
     }
 
     /**
-     * 模拟全局滑动事件（由 RustDesk 信令接收到远程滑动动作时调用）
+     * 模拟点击
      */
-    @RequiresApi(api = Build.VERSION_CODES.N)
-    public void simulateSwipe(float startX, float startY, float endX, float endY, long durationMs) {
-        Path swipePath = new Path();
-        swipePath.moveTo(startX, startY);
-        swipePath.lineTo(endX, endY);
-        GestureDescription.StrokeDescription swipeStroke = 
-                new GestureDescription.StrokeDescription(swipePath, 0, durationMs);
-        GestureDescription swipeBuilder = new GestureDescription.Builder().addStroke(swipeStroke).build();
+    public void simulateClick(int x, int y) {
+        Log.d(TAG, "模拟点击: (" + x + ", " + y + ")");
+        GestureDescription.Builder builder = new GestureDescription.Builder();
+        Path path = new Path();
+        path.moveTo(x, y);
+        builder.addStroke(new GestureDescription.StrokeDescription(path, 0, 10));
+        dispatchGesture(builder.build(), null, null);
+    }
 
-        boolean dispatched = dispatchGesture(swipeBuilder, new GestureResultCallback() {
-            @Override
-            public void onCompleted(GestureDescription gestureDescription) {
-                super.onCompleted(gestureDescription);
-                Log.d(TAG, "模拟滑动成功");
-            }
-
-            @Override
-            public void onCancelled(GestureDescription gestureDescription) {
-                super.onCancelled(gestureDescription);
-                Log.d(TAG, "模拟滑动取消");
-            }
-        }, null);
-
-        Log.d(TAG, "dispatchGesture (Swipe) 触发结果: " + dispatched);
+    /**
+     * 模拟滑动
+     */
+    public void simulateSwipe(int x1, int y1, int x2, int y2, int duration) {
+        Log.d(TAG, "模拟滑动: (" + x1 + ", " + y1 + ") -> (" + x2 + ", " + y2 + ")");
+        GestureDescription.Builder builder = new GestureDescription.Builder();
+        Path path = new Path();
+        path.moveTo(x1, y1);
+        path.lineTo(x2, y2);
+        builder.addStroke(new GestureDescription.StrokeDescription(path, 0, duration));
+        dispatchGesture(builder.build(), null, null);
     }
 }
