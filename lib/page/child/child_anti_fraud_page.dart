@@ -1,14 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:phone_java/app_fonts.dart';
+import 'package:phone_java/utils/api_client.dart';
+import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+// 💡 增加 GlobalKey 控制，方便首页切换标签时触发刷新
+final GlobalKey<ChildAntiFraudPageState> antiFraudKey = GlobalKey<ChildAntiFraudPageState>();
 
 class ChildAntiFraudPage extends StatefulWidget {
   const ChildAntiFraudPage({super.key});
 
   @override
-  State<ChildAntiFraudPage> createState() => _ChildAntiFraudPageState();
+  State<ChildAntiFraudPage> createState() => ChildAntiFraudPageState();
 }
 
-class _ChildAntiFraudPageState extends State<ChildAntiFraudPage> {
+class ChildAntiFraudPageState extends State<ChildAntiFraudPage> {
   // 颜色定义 (保持项目全局统一)
   final Color gray800 = const Color(0xFF1F2937);
   final Color gray500 = const Color(0xFF6B7280);
@@ -19,44 +26,71 @@ class _ChildAntiFraudPageState extends State<ChildAntiFraudPage> {
   final Color red50 = const Color(0xFFFEF2F2);
 
   int _activeTab = 0; // 0: 接听预警, 1: 拦截记录
+  bool _isLoading = true;
 
-  // 💡 模拟数据：接听预警 (针对已接听的真实风险)
-  final List<Map<String, String>> _warningRecords = [
-    {
-      "elderName": "爷爷",
-      "time": "2025-12-04 15:22:00",
-      "duration": "1分15秒",
-      "number": "138 **** 4451",
-      "location": "湖北省武汉市",
-      "type": "疑似冒充公检法", // 风险类型区分于拦截类型
-      "status": "已接听"
-    },
-    {
-      "elderName": "爷爷",
-      "time": "2025-12-03 09:15:22",
-      "duration": "45秒",
-      "number": "155 **** 0092",
-      "location": "上海市",
-      "type": "金融理财诈骗",
-      "status": "已接听"
-    },
-    {
-      "elderName": "爷爷",
-      "time": "2025-12-01 18:30:10",
-      "duration": "2分10秒",
-      "number": "177 **** 8823",
-      "location": "广东省广州市",
-      "type": "虚假中奖诱导",
-      "status": "已接听"
-    },
-  ];
+  // 💡 真实数据存储
+  List<Map<String, String>> _warningRecords = [];
+  List<Map<String, String>> _interceptRecords = [];
 
-  // 💡 模拟数据：拦截记录 (样式与长辈端完全一致)
-  final List<Map<String, String>> _interceptRecords = [
-    {"number": "170 9822 4512", "time": "今天 10:42", "location": "重庆市", "type": "标记号码拦截"},
-    {"number": "00 852 6451 2231", "time": "昨天 15:20", "location": "中国香港", "type": "境外来电拦截"},
-    {"number": "188 2234 5567", "time": "03-23 18:30", "location": "未知归属地", "type": "非通讯录拦截"},
-  ];
+  @override
+  void initState() {
+    super.initState();
+    fetchData(); // 初始加载
+  }
+
+  Future<void> fetchData() async {
+    setState(() => _isLoading = true);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('userId') ?? '';
+      debugPrint("🚀 [前端调试] 开始请求反诈记录, 从本地获取到的 userId: $userId");
+      
+      var response = await ApiClient().get('/api/fraud/reports', queryParameters: {'userId': userId});
+      debugPrint("✅ [前端调试] 收到反诈记录响应: $response");
+      
+      if (response != null && response is List) {
+        List<Map<String, String>> warnings = [];
+        List<Map<String, String>> intercepts = [];
+
+        for (var item in response) {
+          // 将后端实体映射为 UI 格式
+          Map<String, String> record = {
+            "elderName": item['elderName'] ?? "长辈",
+            "time": item['createTime'] != null 
+                ? DateFormat('yyyy-MM-dd HH:mm').format(DateTime.parse(item['createTime']))
+                : "未知时间",
+            "duration": item['duration'] ?? "未知",
+            "number": item['number'] ?? item['content']?.toString().split(" ").first ?? "未知号码",
+            "location": item['location'] ?? "未知",
+            "type": item['modelResult'] ?? "疑似诈骗",
+            "status": item['userConfirm'] == 1 ? "已确认" : (item['userConfirm'] == 0 ? "误报" : "待核实"),
+            "content": item['content'] ?? ""
+          };
+
+          // 这里的逻辑根据实际业务划分：
+          if (record['type']!.contains("拦截")) {
+            intercepts.add(record);
+          } else {
+            warnings.add(record);
+          }
+        }
+
+        setState(() {
+          _warningRecords = warnings;
+          _interceptRecords = intercepts;
+        });
+      }
+    } catch (e) {
+      debugPrint("获取反诈数据失败: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("同步反诈数据失败，请检查网络"))
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -67,9 +101,18 @@ class _ChildAntiFraudPageState extends State<ChildAntiFraudPage> {
           const SizedBox(height: 20),
           _buildTopToggle(), // 顶部切换组件
           Expanded(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              child: _activeTab == 0 ? _buildWarningList() : _buildInterceptList(),
+            child: RefreshIndicator(
+              onRefresh: fetchData, // 支持下拉刷新
+              color: blue600,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                child: _isLoading 
+                    ? const Center(child: CircularProgressIndicator())
+                    : ( (_activeTab == 0 ? _warningRecords : _interceptRecords).isEmpty 
+                        ? _buildEmptyState()
+                        : (_activeTab == 0 ? _buildWarningList() : _buildInterceptList())
+                      ),
+              ),
             ),
           ),
         ],
@@ -176,7 +219,7 @@ class _ChildAntiFraudPageState extends State<ChildAntiFraudPage> {
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: gray800),
               ),
               const SizedBox(height: 12),
-              _buildWarningInfoRow("通话时长：", item['duration']!),
+              _buildWarningInfoRow("通话内容：", item['content']!),
               _buildWarningInfoRow("来电号码：", "${item['number']}  (${item['location']})"),
               _buildWarningInfoRow("风险类型：", item['type']!, valueColor: red600),
               const SizedBox(height: 12),
@@ -202,13 +245,14 @@ class _ChildAntiFraudPageState extends State<ChildAntiFraudPage> {
       child: Row(
         children: [
           Text(label, style: TextStyle(color: gray500, fontSize: 14)),
-          Text(value, style: TextStyle(color: valueColor ?? gray800, fontSize: 14, fontWeight: FontWeight.w500)),
+          const SizedBox(width: 8),
+          Expanded(child: Text(value, style: TextStyle(color: valueColor ?? gray800, fontSize: 14, fontWeight: FontWeight.w500))),
         ],
       ),
     );
   }
 
-  // 画面二：拦截记录 (完全参考长辈端样式)
+  // 画面二：拦截记录
   Widget _buildInterceptList() {
     return ListView.separated(
       padding: const EdgeInsets.all(20),
@@ -257,6 +301,21 @@ class _ChildAntiFraudPageState extends State<ChildAntiFraudPage> {
           ],
         );
       },
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.shield_outlined, size: 80, color: gray100),
+          const SizedBox(height: 16),
+          Text("暂无反诈记录", style: TextStyle(color: gray500, fontSize: 18)),
+          const SizedBox(height: 8),
+          Text("帮帮正在默默守护您的长辈", style: TextStyle(color: gray500.withOpacity(0.6), fontSize: 14)),
+        ],
+      ),
     );
   }
 }

@@ -54,4 +54,7 @@ flutter {
 dependencies {
     // 拉起微信小程序等能力：https://developers.weixin.qq.com/doc/oplatform/Mobile_App/WeChat_Login/Development_Guide.html
     implementation("com.tencent.mm.opensdk:wechat-sdk-android:6.8.34")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.tensorflow:tensorflow-lite:2.14.0")
+    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 }

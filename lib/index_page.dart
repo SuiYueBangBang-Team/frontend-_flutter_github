@@ -1,4 +1,3 @@
-import 'package:phone_java/page/elder_anti_fraud_page.dart';
 import 'package:phone_java/page/family_page.dart';
 import 'package:phone_java/page/health_page.dart';
 import 'package:phone_java/page/home_content.dart';
@@ -67,14 +66,6 @@ class _IndexPageState extends State<IndexPage> {
         'activeIcon': Icons.people_rounded,
         'label': '家人',
         'page': FamilyPage(key: _familyPageKey),
-      },
-      {
-        'title': '反诈守护',
-        'subtitle': '帮帮守护您的钱袋子',
-        'icon': Icons.phone_callback_outlined, // 电话图案
-        'activeIcon': Icons.phone_callback_rounded,
-        'label': '反诈',
-        'page': const ElderAntiFraudPage(), // 这里之后替换为你实际的反诈页面
       },
       {
         'title': '设置',

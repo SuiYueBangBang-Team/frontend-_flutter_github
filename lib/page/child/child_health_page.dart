@@ -207,14 +207,14 @@ class _ChildHealthPageState extends State<ChildHealthPage> {
                 if (nameController.text.isEmpty || doseController.text.isEmpty || timeController.text.isEmpty) return;
 
                 try {
-                  await ApiClient().post('/api/family/medications', data: {
+                    await ApiClient().post('/api/family/medications', data: {
                     "name": nameController.text,
                     "dose": doseController.text,
                     "timeStr": timeController.text,
-                    "elderUserId": selectedElderId,
+                    "targetUserId": selectedElderId,
                     "elderName": selectedElderName,
                   });
-                  debugPrint('[ChildHealth] add medication success elderUserId=$selectedElderId elderName=$selectedElderName');
+                  debugPrint('[ChildHealth] add medication success targetUserId=$selectedElderId elderName=$selectedElderName');
                   if(mounted) Navigator.pop(context);
                   _fetchHealthData();
                 } catch (e) {

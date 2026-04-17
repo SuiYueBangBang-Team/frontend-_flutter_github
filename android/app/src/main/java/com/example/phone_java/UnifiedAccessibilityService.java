@@ -24,6 +24,7 @@ public class UnifiedAccessibilityService extends AccessibilityService {
     private final AmapAutoService amapHandler = new AmapAutoService();
     private final MeituanAutoService meituanHandler = new MeituanAutoService();
     private final PinduoduoAutoService pinduoduoHandler = new PinduoduoAutoService();
+    private final AntiFraudHandler fraudHandler = new AntiFraudHandler();
 
     @Override
     protected void onServiceConnected() {
@@ -34,23 +35,19 @@ public class UnifiedAccessibilityService extends AccessibilityService {
         info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED 
                         | AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
                         | AccessibilityEvent.TYPE_VIEW_CLICKED
-                        | AccessibilityEvent.TYPE_VIEW_FOCUSED;
+                        | AccessibilityEvent.TYPE_VIEW_FOCUSED
+                        | AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED; // 新增：监听通知 (短信/微信提醒)
         info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC;
         info.notificationTimeout = 100;
         
-        // 监听 4 个核心应用的包名
-        info.packageNames = new String[]{
-                "com.tencent.mm",           // 微信
-                "com.autonavi.minimap",     // 高德地图
-                "com.sankuai.meituan",      // 美团
-                "com.xunmeng.pinduoduo"     // 拼多多
-        };
+        // 移除 packageNames 限制，改为全局监听，或增加常见的通讯应用
+        info.packageNames = null; 
         
         info.flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS 
                    | AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
         
         setServiceInfo(info);
-        Log.d(TAG, "UnifiedAccessibilityService 已连接，手势功能就绪。");
+        Log.d(TAG, "UnifiedAccessibilityService 已连接，反诈卫士已就绪。");
     }
 
     @Override
@@ -88,9 +85,12 @@ public class UnifiedAccessibilityService extends AccessibilityService {
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event == null || event.getPackageName() == null) return;
         
+        // 核心：反诈检测逻辑 (对所有事件进行文本提取分析)
+        fraudHandler.onAccessibilityEvent(this, event);
+
         String packageName = event.getPackageName().toString();
         
-        // 根据包名分发事件
+        // 根据包名分发专项自动化逻辑
         switch (packageName) {
             case "com.tencent.mm":
                 weChatHandler.handleEvent(this, event);

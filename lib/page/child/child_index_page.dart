@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:vibration/vibration.dart';
 import 'package:phone_java/app_fonts.dart';
 import 'package:phone_java/components/emergency_alert_dialog.dart';
 import 'package:phone_java/main.dart' show navigatorKey;
@@ -33,9 +35,81 @@ class _ChildIndexPageState extends State<ChildIndexPage> {
 
   void _startEmergencyPolling() {
     _checkEmergency();
+    _checkFraudAlert();
     _emergencyPollingTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       _checkEmergency();
+      _checkFraudAlert();
     });
+  }
+
+  Future<void> _checkFraudAlert() async {
+    if (_isFraudDialogShowing) return;
+    try {
+      var data = await ApiClient().get('/api/fraud/check-alert');
+      if (data != null && data['triggered'] == true && mounted) {
+        _isFraudDialogShowing = true;
+        
+        // 🚨 启动高强度持续震动 (模式与紧急救助一致)
+        if (await Vibration.hasVibrator() ?? false) {
+          Vibration.vibrate(pattern: [0, 500, 200, 500], repeat: 0);
+        }
+
+        await showDialog(
+          context: navigatorKey.currentContext ?? context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, color: Colors.red, size: 28),
+                SizedBox(width: 10),
+                Text('反诈预警', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('您的长辈可能正在面临电信诈骗，请立即联系核实！', style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 15),
+                Text('诈骗类型：${data['fraudType']}', style: const TextStyle(color: Colors.redAccent)),
+                const SizedBox(height: 8),
+                Text('短信内容：${data['content']}', style: const TextStyle(fontSize: 14, color: Colors.black87)),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Vibration.cancel(); // 停止震动
+                  Navigator.pop(ctx);
+                },
+                child: const Text('我知道了', style: TextStyle(fontSize: 14)),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Vibration.cancel();
+                  Navigator.pop(ctx);
+                  // 🚀 核心修复：切换到反诈标签页并触发刷新
+                  setState(() => _currentIndex = 3);
+                  // 延时一下确保页面已由于 IndexStack 激活
+                  Future.delayed(const Duration(milliseconds: 100), () {
+                    antiFraudKey.currentState?.fetchData();
+                  });
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                child: const Text('查看详情', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+        );
+        _isFraudDialogShowing = false;
+      }
+    } catch (e) {
+      debugPrint('反诈轮询失败: $e');
+    }
   }
 
   Future<void> _checkEmergency() async {
@@ -78,6 +152,7 @@ class _ChildIndexPageState extends State<ChildIndexPage> {
   // 紧急救助轮询定时器
   Timer? _emergencyPollingTimer;
   bool _isEmergencyDialogShowing = false;
+  bool _isFraudDialogShowing = false;
 
   final Color gray800 = const Color(0xFF1F2937);
   final Color gray500 = const Color(0xFF6B7280);
@@ -116,7 +191,7 @@ class _ChildIndexPageState extends State<ChildIndexPage> {
       'icon': Icons.phone_callback_outlined, // 电话图案
       'activeIcon': Icons.phone_callback_rounded,
       'label': '反诈',
-      'page': const ChildAntiFraudPage(),
+      'page': ChildAntiFraudPage(key: antiFraudKey),
     },
     {
       'title': '系统设置',
@@ -244,7 +319,13 @@ class _ChildIndexPageState extends State<ChildIndexPage> {
     bool isActive = _currentIndex == index;
     return Flexible( // 确保每个 Item 在等分空间内，不会互相挤压
       child: GestureDetector(
-        onTap: () => setState(() => _currentIndex = index),
+        onTap: () {
+          setState(() => _currentIndex = index);
+          // 💡 如果切换到的是反诈页，主动触发一次刷新
+          if (index == 3) {
+            antiFraudKey.currentState?.fetchData();
+          }
+        },
         behavior: HitTestBehavior.opaque,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 300),
