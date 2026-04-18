@@ -69,11 +69,11 @@ class _EmergencyPageState extends State<EmergencyPage> with SingleTickerProvider
       });
       if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("已自动发短信给紧急联系人")));
     } catch (e) {}
-    
+
     // 倒计时结束后自动拨打120
     _makePhoneCall('120');
   }
-  
+
   // 新增：直接拨打电话的方法
   Future<void> _makePhoneCall(String phoneNumber) async {
     try {
@@ -95,7 +95,7 @@ class _EmergencyPageState extends State<EmergencyPage> with SingleTickerProvider
       });
       if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("正在拨打120并通知家属...")));
     } catch (e) {}
-    
+
     // 立即拨打120
     _makePhoneCall('120');
   }
