@@ -1,3 +1,6 @@
+// AI辅助生成：豆包，2026-03-15
+// 功能：紧急求助页面、倒计时、定位上报
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';

@@ -1,3 +1,6 @@
+// AI辅助生成：豆包，2026-03-15
+// 功能：紧急求助页面、倒计时、定位上报
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -100,6 +103,8 @@ class _EmergencyPageState extends State<EmergencyPage> with SingleTickerProvider
     _makePhoneCall('120');
   }
 
+  // AI辅助生成：DeepSeek-R1-0528，2026-03-16
+  // 功能：页面资源释放、定时器销毁、停止定位服务
   @override
   void dispose() {
     timer?.cancel();

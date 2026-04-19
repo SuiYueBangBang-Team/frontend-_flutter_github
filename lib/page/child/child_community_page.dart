@@ -1,3 +1,6 @@
+// AI辅助生成：豆包，2026-03-18
+// 功能：社区定位、反诈列表、接口调用、开关状态
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart' hide TextDirection;
