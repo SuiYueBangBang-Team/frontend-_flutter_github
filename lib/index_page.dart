@@ -1,6 +1,7 @@
 import 'package:phone_java/page/family_page.dart';
 import 'package:phone_java/page/health_page.dart';
 import 'package:phone_java/page/home_content.dart';
+import 'package:phone_java/page/elder_anti_fraud_page.dart';
 import 'package:phone_java/app_fonts.dart'; //  必须引入含有 FontManager 和 UserProfileManager 的文件
 import 'package:phone_java/page/settings_page.dart';
 import 'package:flutter/material.dart';
@@ -66,6 +67,14 @@ class _IndexPageState extends State<IndexPage> {
         'activeIcon': Icons.people_rounded,
         'label': '家人',
         'page': FamilyPage(key: _familyPageKey),
+      },
+      {
+        'title': '反诈守护',
+        'subtitle': '智能拦截，保护财产安全',
+        'icon': Icons.phone_callback_outlined,
+        'activeIcon': Icons.phone_callback_rounded,
+        'label': '反诈',
+        'page': const ElderAntiFraudPage(),
       },
       {
         'title': '设置',

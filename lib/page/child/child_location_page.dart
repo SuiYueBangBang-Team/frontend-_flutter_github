@@ -12,7 +12,6 @@ import 'package:permission_handler/permission_handler.dart'; // 用于申请定�
 
 import 'dart:math';
 import '../../utils/location_service.dart'; // 新增引入
-import '../../utils/rustdesk_manager.dart'; // 新增引入 RustDesk 远程控制
 
 class ChildLocationPage extends StatefulWidget {
   const ChildLocationPage({super.key});
@@ -508,65 +507,6 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
                     ],
                   ),
                 ],
-              ),
-            ),
-            
-            const SizedBox(width: 10),
-            
-            // 无论设备是否在线，都显示远程协助按钮
-            // 因为有可能定位心跳断了(离线)，但 RustDesk 后台依然可连
-            OutlinedButton.icon(
-              onPressed: () async {
-                final int elderId = int.parse(device['id']);
-                
-                // 1. 展示唤醒中弹窗
-                showDialog(
-                  context: context,
-                  barrierDismissible: false,
-                  builder: (context) => AlertDialog(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    content: const Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SizedBox(height: 10),
-                        CircularProgressIndicator(color: Colors.blueAccent),
-                        SizedBox(height: 20),
-                        Text("已向长辈发送远程唤醒指令", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                        SizedBox(height: 8),
-                        Text("长辈点选允许后即可建立实况连接\n请稍候(最长可能需要30秒)...", 
-                            style: TextStyle(color: Colors.grey, fontSize: 14), textAlign: TextAlign.center),
-                      ],
-                    ),
-                  ),
-                );
-
-                // 2. 发起 API 拉取，这一步其实已经在后端帮我们往 Redis 挂了 wakeup 标志位
-                final info = await RustDeskManager().fetchElderRemoteInfo(elderId);
-                
-                if (info != null && info['uuid']!.isNotEmpty) {
-                  // 为了给长辈端的心跳（30秒周期）留出时间，我们可以在前端或者后端阻塞一下
-                  // 这里用延时假装 loading 一会，其实用户已经在等了，等 5 秒然后自动跳转 RustDesk 让他自动重试
-                  await Future.delayed(const Duration(seconds: 4));
-                  if (context.mounted) {
-                    Navigator.pop(context); // 关掉 loading
-                    await RustDeskManager().connectToRemoteElder(context, info['uuid']!, info['password']!);
-                  }
-                } else {
-                  if (context.mounted) {
-                    Navigator.pop(context); // 关掉 loading
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                        content: Text("长辈尚未配置远程协助，请先在长辈手机的设置页面完成配置")));
-                  }
-                }
-              },
-              icon: const Icon(Icons.important_devices, size: 16),
-              label: const Text('远程', style: TextStyle(fontSize: 12)),
-              style: OutlinedButton.styleFrom(
-                side: BorderSide(color: Colors.blueAccent.withOpacity(0.5)),
-                foregroundColor: Colors.blueAccent,
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
-                minimumSize: const Size(60, 32),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               ),
             ),
           ],

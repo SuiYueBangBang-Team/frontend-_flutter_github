@@ -174,9 +174,7 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           const SizedBox(height: 15),
 
-          // --- 4. 远程协助配置卡片 ---
-          _buildRemoteAssistCard(),
-          const SizedBox(height: 15),
+
 
           // --- 5. 账号操作 ---
           FutureBuilder<String>(
