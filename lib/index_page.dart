@@ -188,10 +188,10 @@ class _IndexPageState extends State<IndexPage> {
           // debugPrint("📍 [长辈端] 捕获坐标: 经度=${result.longitude}, 纬度=${result.latitude}，准备上报后端...");
 
           try {
-            //  重点防坑：因为你的后端 Controller 中使用了 @RequestParam("lat")，
-            // 所以 ApiClient 不能直接传 data:{}，必须把参数拼接在 URL 后面，或者使用 FormData。
+            // 获取当前时间的 Unix 时间戳（秒）
+            int timestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
             await ApiClient().post(
-                '/api/location/report?lat=${result.latitude}&lng=${result.longitude}'
+                '/api/location/report?lat=${result.latitude}&lng=${result.longitude}&timestamp=$timestamp'
             );
             // debugPrint("✅ [长辈端] 坐标上报后端成功！");
           } catch (e) {
