@@ -104,6 +104,7 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
             "battery": e['batteryLevel'] ?? 0,
             "volume": e['volumeLevel'] ?? 0,
             "isOnline": e['isOnline'] ?? false,
+            "memberId": e['memberId']?.toString() ?? '',
           }).toList();
 
           if (boundDevices.isNotEmpty && selectedDeviceId == null) {
@@ -112,7 +113,7 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
         });
       }
     } catch (e) {
-      debugPrint("拉取设备列表失败: $e");
+      // debugPrint("拉取设备列表失败: $e");
       if (mounted && !isSilent) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("加载设备失败，请检查网络")));
       }
@@ -509,8 +510,94 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
                 ],
               ),
             ),
+            IconButton(
+              icon: const Icon(Icons.more_vert, color: Colors.grey),
+              onPressed: () => _showDeviceOptions(device),
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showDeviceOptions(Map<String, dynamic> device) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text("编辑称呼"),
+              onTap: () { Navigator.pop(context); _showEditAliasDialog(device); },
+            ),
+            ListTile(
+              leading: const Icon(Icons.link_off, color: Colors.red),
+              title: const Text("删除设备", style: TextStyle(color: Colors.red)),
+              onTap: () { Navigator.pop(context); _deleteDevice(device); },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showEditAliasDialog(Map<String, dynamic> device) {
+    final controller = TextEditingController(text: device['name']);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("编辑称呼"),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("取消")),
+          ElevatedButton(
+            onPressed: () async {
+              final alias = controller.text.trim();
+              if (alias.isEmpty) return;
+              Navigator.pop(ctx);
+              try {
+                await ApiClient().put('/api/family/members/${device['memberId']}', data: {'alias': alias});
+                _fetchLocationData(isSilent: true);
+              } catch (e) {
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("修改失败: $e")));
+              }
+            },
+            child: const Text("确认"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _deleteDevice(Map<String, dynamic> device) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("确认删除"),
+        content: Text("确定要解除与「${device['name']}」的绑定吗？"),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("取消")),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              try {
+                await ApiClient().delete('/api/family/members/${device['memberId']}');
+                setState(() => boundDevices.removeWhere((d) => d['memberId'] == device['memberId']));
+              } catch (e) {
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("删除失败: $e")));
+              }
+            },
+            child: const Text("删除", style: TextStyle(color: Colors.white)),
+          ),
+        ],
       ),
     );
   }

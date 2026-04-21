@@ -1,9 +1,9 @@
 import 'package:phone_java/page/family_page.dart';
 import 'package:phone_java/page/health_page.dart';
 import 'package:phone_java/page/home_content.dart';
-import 'package:phone_java/page/elder_anti_fraud_page.dart';
 import 'package:phone_java/app_fonts.dart'; //  必须引入含有 FontManager 和 UserProfileManager 的文件
 import 'package:phone_java/page/settings_page.dart';
+import 'package:phone_java/page/elder_anti_fraud_page.dart';
 import 'package:flutter/material.dart';
 // 定位相关的插件
 import 'package:flutter_bmflocation/flutter_bmflocation.dart';
@@ -12,7 +12,6 @@ import 'package:phone_java/utils/api_client.dart';
 import 'dart:async'; //  用于定时器
 import 'package:battery_plus/battery_plus.dart'; //  用于获取真实电量
 import 'package:volume_controller/volume_controller.dart'; //  用于获取真实系统音量
-import 'package:phone_java/utils/rustdesk_manager.dart'; // 导入 RustDeskManager
 
 class IndexPage extends StatefulWidget {
   const IndexPage({super.key});
@@ -70,7 +69,7 @@ class _IndexPageState extends State<IndexPage> {
       },
       {
         'title': '反诈守护',
-        'subtitle': '智能拦截，保护财产安全',
+        'subtitle': '实时拦截骚扰',
         'icon': Icons.phone_callback_outlined,
         'activeIcon': Icons.phone_callback_rounded,
         'label': '反诈',
@@ -89,8 +88,6 @@ class _IndexPageState extends State<IndexPage> {
     _requestPermissionAndStartReport();
     // 新增：立刻启动设备心跳后台轮询
     _startHeartbeatReport();
-    // 新增：初始化 RustDesk Host 服务并上报控制 ID
-    RustDeskManager().initHostService();
   }
 
   @override
@@ -119,7 +116,7 @@ class _IndexPageState extends State<IndexPage> {
         _showBackgroundLocationGuide();
       }
     } else {
-      debugPrint("⚠️ [长辈端] 定位权限被拒绝，无法向子女上报位置！");
+      // debugPrint("⚠️ [长辈端] 定位权限被拒绝，无法向子女上报位置！");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("请允许定位权限，否则子女无法确认您的安全")));
@@ -171,10 +168,10 @@ class _IndexPageState extends State<IndexPage> {
   //  核心：5 秒/次 位置持续上报逻辑
   void _startElderlyLocationReport() async {
     try {
-      debugPrint("📌 [长辈端] 定位流程 1: 设置隐私政策...");
+      // debugPrint("📌 [长辈端] 定位流程 1: 设置隐私政策...");
       _locationPlugin.setAgreePrivacy(true);
 
-      debugPrint("📌 [长辈端] 定位流程 2: 初始化定位参数...");
+      // debugPrint("📌 [长辈端] 定位流程 2: 初始化定位参数...");
       BaiduLocationAndroidOption androidOption = BaiduLocationAndroidOption(
         locationMode: BMFLocationMode.hightAccuracy,
         isNeedAddress: false, //  不解析地址（省流省电），只要经纬度
@@ -184,10 +181,10 @@ class _IndexPageState extends State<IndexPage> {
       );
       await _locationPlugin.prepareLoc(androidOption.getMap(), {});
 
-      debugPrint("📌 [长辈端] 定位流程 3: 注册连续回调...");
+      // debugPrint("📌 [长辈端] 定位流程 3: 注册连续回调...");
       _locationPlugin.seriesLocationCallback(callback: (BaiduLocation result) async {
         if (result.latitude != null && result.longitude != null && result.latitude! > 1.0) {
-          debugPrint("📍 [长辈端] 捕获坐标: 经度=${result.longitude}, 纬度=${result.latitude}，准备上报后端...");
+          // debugPrint("📍 [长辈端] 捕获坐标: 经度=${result.longitude}, 纬度=${result.latitude}，准备上报后端...");
 
           try {
             //  重点防坑：因为你的后端 Controller 中使用了 @RequestParam("lat")，
@@ -195,21 +192,21 @@ class _IndexPageState extends State<IndexPage> {
             await ApiClient().post(
                 '/api/location/report?lat=${result.latitude}&lng=${result.longitude}'
             );
-            debugPrint("✅ [长辈端] 坐标上报后端成功！");
+            // debugPrint("✅ [长辈端] 坐标上报后端成功！");
           } catch (e) {
-            debugPrint("❌ [长辈端] 上报后端失败: $e");
+            // debugPrint("❌ [长辈端] 上报后端失败: $e");
           }
 
         } else {
-          debugPrint("⚠️ [长辈端] 捕获坐标无效，错误码=${result.errorCode}");
+          // debugPrint("⚠️ [长辈端] 捕获坐标无效，错误码=${result.errorCode}");
         }
       });
 
-      debugPrint("📌 [长辈端] 定位流程 4: 正式启动后台定位轮询！");
+      // debugPrint("📌 [长辈端] 定位流程 4: 正式启动后台定位轮询！");
       await _locationPlugin.startLocation();
 
     } catch (e) {
-      debugPrint("❌ [长辈端] 定位模块启动异常: $e");
+      // debugPrint("❌ [长辈端] 定位模块启动异常: $e");
     }
   }
 
@@ -240,59 +237,13 @@ class _IndexPageState extends State<IndexPage> {
           '/api/device/htbtreport?deviceId=Elder_Device&battery=$batteryLevel&volume_level=$volumeLevel'
       );
 
-      // 4. 处理后端下发的特殊指令（比如子女端发起的远程呼叫）
-      if (res != null && res is Map && res['command'] == 'WAKE_UP_REMOTE') {
-        String childName = res['childName'] ?? '您的家人';
-        _showRemoteWakeupAlert(childName);
-      }
-
       debugPrint("💓 [长辈端] 设备心跳上报成功！当前电量: $batteryLevel%, 当前音量: $volumeLevel% (30秒后下一次)");
     } catch (e) {
       debugPrint("❌ [长辈端] 设备心跳上报失败: $e");
     }
   }
 
-  // 💡 弹出醒目的远程唤醒提示
-  void _showRemoteWakeupAlert(String childName) {
-    if (!mounted) return;
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            const Icon(Icons.phonelink_ring_rounded, color: Colors.blueAccent, size: 28),
-            const SizedBox(width: 8),
-            Expanded(child: Text("$childName 请求协助", style: const TextStyle(fontWeight: FontWeight.bold))),
-          ],
-        ),
-        content: Text(
-          "您的家人正在尝试连接您的手机。\n请点击下方按钮，允许屏幕共享与远程操作，以便家人更好地位您提供帮助。",
-          style: const TextStyle(fontSize: 16, height: 1.5),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("拒绝", style: TextStyle(color: Colors.grey, fontSize: 16)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blueAccent,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            ),
-            onPressed: () async {
-              Navigator.pop(context);
-              // 同意后，拉起第三方远控引擎
-              await RustDeskManager().launchRemoteAppForeground();
-            },
-            child: const Text("允许控制", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
-  }
+
 
   @override
   Widget build(BuildContext context) {

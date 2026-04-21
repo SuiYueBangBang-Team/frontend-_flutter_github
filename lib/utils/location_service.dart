@@ -71,7 +71,7 @@ class LocationService {
       return completer.future;
 
     } catch (e) {
-      debugPrint("单次定位异常: $e");
+      // debugPrint("单次定位异常: $e");
       if (!completer.isCompleted) completer.complete("定位失败");
       return completer.future;
     }
@@ -96,7 +96,7 @@ class LocationService {
     }
 
     try {
-      debugPrint("📌 LocationService: 正在初始化百度定位...");
+      // debugPrint("📌 LocationService: 正在初始化百度定位...");
       _locationPlugin.setAgreePrivacy(true);
 
       BaiduLocationAndroidOption androidOption = BaiduLocationAndroidOption(
@@ -109,7 +109,7 @@ class LocationService {
       await _locationPlugin.prepareLoc(androidOption.getMap(), {});
 
       _locationPlugin.seriesLocationCallback(callback: (BaiduLocation result) {
-        debugPrint("📍 百度定位回调到达! 错误码=${result.errorCode}, 经度=${result.longitude}, 纬度=${result.latitude}");
+        // debugPrint("📍 百度定位回调到达! 错误码=${result.errorCode}, 经度=${result.longitude}, 纬度=${result.latitude}");
         if (result.latitude != null && result.longitude != null && result.latitude! > 1.0) {
           latitude = result.latitude;
           longitude = result.longitude;
@@ -123,9 +123,9 @@ class LocationService {
 
       await _locationPlugin.startLocation();
       _isInitialized = true;
-      debugPrint("📌 LocationService: 定位启动成功");
+      // debugPrint("📌 LocationService: 定位启动成功");
     } catch (e) {
-      debugPrint("❌ LocationService 定位异常: $e");
+      // debugPrint("❌ LocationService 定位异常: $e");
     }
   }
 

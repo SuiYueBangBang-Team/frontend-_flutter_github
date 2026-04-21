@@ -8,6 +8,10 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 
 import androidx.annotation.NonNull;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 
 import java.io.File;
@@ -22,8 +26,11 @@ import com.tencent.mm.opensdk.openapi.WXAPIFactory;
 import io.flutter.embedding.android.FlutterActivity;
 import io.flutter.embedding.engine.FlutterEngine;
 import io.flutter.plugin.common.MethodChannel;
+import android.app.Activity;
 
 public class MainActivity extends FlutterActivity {
+
+    private static final int REQUEST_PHONE_STATE_PERMISSIONS = 5678;
 
     /**
      * 话费充值小程序「账号原始ID」（截图）。拉起接口使用 gh_ 原始 ID，不是小程序 AppID（wx...）。
@@ -187,7 +194,126 @@ public class MainActivity extends FlutterActivity {
                     }
                 });
 
+        new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), "com.yourcompany.phone_java/anti_fraud")
+                .setMethodCallHandler((call, result) -> {
+                    if ("requestCallScreeningRole".equals(call.method)) {
+                        android.util.Log.i(TAG, "[反诈角色请求] API Level: " + android.os.Build.VERSION.SDK_INT);
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                            android.app.role.RoleManager roleManager = (android.app.role.RoleManager) getSystemService(Context.ROLE_SERVICE);
+                            if (roleManager != null) {
+                                if (!roleManager.isRoleHeld(android.app.role.RoleManager.ROLE_CALL_SCREENING)) {
+                                    Intent intent = roleManager.createRequestRoleIntent(android.app.role.RoleManager.ROLE_CALL_SCREENING);
+                                    if (intent != null) {
+                                        startActivityForResult(intent, 1234);
+                                        result.success("REQUESTING");
+                                    } else {
+                                        result.success("INTENT_NULL");
+                                    }
+                                } else {
+                                    result.success("ALREADY_HELD");
+                                }
+                            } else {
+                                result.success("ROLE_MANAGER_NULL");
+                            }
+                        } else {
+                            result.success("NOT_SUPPORTED");
+                        }
+                    } else if ("openDefaultAppsSettings".equals(call.method)) {
+                        try {
+                            Intent intent = new Intent(android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS);
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                            startActivity(intent);
+                            result.success(true);
+                        } catch (Exception e) {
+                            result.success(false);
+                        }
+                    } else if ("checkCallScreeningRole".equals(call.method)) {
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                            android.app.role.RoleManager roleManager = (android.app.role.RoleManager) getSystemService(Context.ROLE_SERVICE);
+                            if (roleManager != null) {
+                                result.success(roleManager.isRoleHeld(android.app.role.RoleManager.ROLE_CALL_SCREENING));
+                            } else {
+                                result.success(false);
+                            }
+                        } else {
+                            result.success(false);
+                        }
+                    } else if ("checkPhoneStatePermissions".equals(call.method)) {
+                        boolean hasReadPhone = ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED;
+                        boolean hasReadLog = ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED;
+                        boolean hasAnswer = ContextCompat.checkSelfPermission(this, android.Manifest.permission.ANSWER_PHONE_CALLS) == PackageManager.PERMISSION_GRANTED;
+                        result.success(hasReadPhone && hasReadLog && hasAnswer);
+                    } else if ("requestPhoneStatePermissions".equals(call.method)) {
+                        String[] perms = {
+                            android.Manifest.permission.READ_PHONE_STATE,
+                            android.Manifest.permission.READ_CALL_LOG,
+                            android.Manifest.permission.ANSWER_PHONE_CALLS
+                        };
+                        boolean allGranted = true;
+                        for (String p : perms) {
+                            if (ContextCompat.checkSelfPermission(this, p) != PackageManager.PERMISSION_GRANTED) {
+                                allGranted = false;
+                                break;
+                            }
+                        }
+                        if (allGranted) {
+                            result.success("ALREADY_GRANTED");
+                        } else {
+                            ActivityCompat.requestPermissions(this, perms, REQUEST_PHONE_STATE_PERMISSIONS);
+                            result.success("REQUESTING");
+                        }
+                    } else if ("startAntiFraudService".equals(call.method)) {
+                        AntiFraudForegroundService.start(MainActivity.this);
+                        result.success(true);
+                    } else if ("stopAntiFraudService".equals(call.method)) {
+                        AntiFraudForegroundService.stop(MainActivity.this);
+                        result.success(true);
+                    } else if ("isAntiFraudServiceRunning".equals(call.method)) {
+                        result.success(AntiFraudForegroundService.isRunning());
+                    } else {
+                        result.notImplemented();
+                    }
+                });
+
         // 监听悬浮窗的语音事件，透传到 Flutter（暂时禁用）
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == 1234) {
+            boolean actuallyHeld = false;
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                android.app.role.RoleManager rm = (android.app.role.RoleManager) getSystemService(Context.ROLE_SERVICE);
+                if (rm != null) {
+                    actuallyHeld = rm.isRoleHeld(android.app.role.RoleManager.ROLE_CALL_SCREENING);
+                }
+            }
+            android.util.Log.i(TAG, "[角色请求结果] resultCode=" + resultCode + ", 实际持有=" + actuallyHeld);
+            if (getFlutterEngine() != null) {
+                new MethodChannel(getFlutterEngine().getDartExecutor().getBinaryMessenger(), "com.yourcompany.phone_java/anti_fraud")
+                    .invokeMethod("roleResult", actuallyHeld);
+            }
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_PHONE_STATE_PERMISSIONS) {
+            boolean allGranted = true;
+            for (int r : grantResults) {
+                if (r != PackageManager.PERMISSION_GRANTED) {
+                    allGranted = false;
+                    break;
+                }
+            }
+            android.util.Log.i(TAG, "[降级权限结果] allGranted=" + allGranted);
+            if (getFlutterEngine() != null) {
+                new MethodChannel(getFlutterEngine().getDartExecutor().getBinaryMessenger(), "com.yourcompany.phone_java/anti_fraud")
+                    .invokeMethod("phoneStatePermResult", allGranted);
+            }
+        }
     }
 
     private void registerWeChatAppIfConfigured() {

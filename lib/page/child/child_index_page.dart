@@ -70,7 +70,8 @@ class _ChildIndexPageState extends State<ChildIndexPage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('您的长辈可能正在面临电信诈骗，请立即联系核实！', style: TextStyle(fontWeight: FontWeight.bold)),
+                Text('您的长辈【${data['elderName'] ?? "长辈"}】可能正在面临电信诈骗，请立即联系核实！', 
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                 const SizedBox(height: 15),
                 Text('诈骗类型：${data['fraudType']}', style: const TextStyle(color: Colors.redAccent)),
                 const SizedBox(height: 8),

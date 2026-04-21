@@ -3,7 +3,6 @@ import 'package:flutter/cupertino.dart';
 import 'package:phone_java/app_fonts.dart';
 import 'package:phone_java/page/emergency_page.dart';
 import 'package:phone_java/utils/api_client.dart';
-import 'package:phone_java/utils/rustdesk_manager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -174,8 +173,6 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           const SizedBox(height: 15),
 
-
-
           // --- 5. 账号操作 ---
           FutureBuilder<String>(
             future: _loadUserPhone(),
@@ -294,144 +291,7 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  /// 远程协助配置卡片（带总控开关）
-  Widget _buildRemoteAssistCard() {
-    return FutureBuilder<SharedPreferences>(
-      future: SharedPreferences.getInstance(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const SizedBox();
-        final prefs = snapshot.data!;
-        // 读取配置开关状态
-        bool isEnabled = prefs.getBool('remote_control_enabled') ?? false;
-        String savedId = prefs.getString('remote_app_id') ?? '';
 
-        return _buildSettingCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 标题行与独立开关
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: isEnabled ? Colors.teal.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(Icons.important_devices_rounded,
-                        color: isEnabled ? Colors.teal : Colors.grey, size: 30),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text("远程协助", style: TextStyle(fontSize: AppFonts.titleLarge, fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 4),
-                        Text(
-                          isEnabled ? "开启后子女可发来远程请求" : "功能已全线关闭，保护隐私",
-                          style: TextStyle(fontSize: AppFonts.bodySmall, color: Colors.grey[600]),
-                        ),
-                      ],
-                    ),
-                  ),
-                  CupertinoSwitch(
-                    value: isEnabled,
-                    activeColor: Colors.teal,
-                    onChanged: (val) async {
-                      await prefs.setBool('remote_control_enabled', val);
-                      if (!val) {
-                        // 关闭开关时，抹除后台的凭证切断物理链接
-                        await RustDeskManager().clearCredentials();
-                      } else {
-                        // 开启开关时，由于有可能之前配过了，也提醒下同步
-                        String? id = prefs.getString('remote_app_id');
-                        String? pass = prefs.getString('remote_app_password');
-                        if (id != null && pass != null) {
-                          RustDeskManager().uploadCredentialsToServer(id, pass);
-                        }
-                      }
-                      setState(() {});
-                    },
-                  ),
-                ],
-              ),
-
-              // 下方区域：只有在开关开启时才显示
-              if (isEnabled) ...[
-                const SizedBox(height: 18),
-                // 当前状态展示
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: savedId.isNotEmpty
-                        ? Colors.green.withOpacity(0.08)
-                        : Colors.orange.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: savedId.isNotEmpty
-                          ? Colors.green.withOpacity(0.3)
-                          : Colors.orange.withOpacity(0.3),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        savedId.isNotEmpty ? Icons.check_circle_outline : Icons.info_outline,
-                        color: savedId.isNotEmpty ? Colors.green : Colors.orange,
-                        size: 22,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          savedId.isNotEmpty
-                              ? "控制端已受保护 · $savedId"
-                              : "尚未完成配置，请点击下方进行配置",
-                          style: TextStyle(
-                            fontSize: AppFonts.bodyMedium,
-                            color: savedId.isNotEmpty ? Colors.green[800] : Colors.orange[800],
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                // 按钮区域
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.teal,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                          elevation: 0,
-                        ),
-                        onPressed: () async {
-                           // 开启我们的三步走向导
-                           bool? ok = await RustDeskManager.showSetupWizard(context);
-                           if (ok == true) setState(() {});
-                        },
-                        icon: Icon(savedId.isNotEmpty ? Icons.edit : Icons.settings_suggest, size: 20),
-                        label: Text(
-                          savedId.isNotEmpty ? "修改凭证" : "开始配置设置",
-                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ],
-          ),
-        );
-      },
-    );
-  }
 
   Widget _buildSettingCard({required Widget child}) {
     return Container(

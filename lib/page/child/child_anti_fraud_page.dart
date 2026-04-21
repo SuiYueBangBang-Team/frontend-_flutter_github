@@ -63,7 +63,7 @@ class ChildAntiFraudPageState extends State<ChildAntiFraudPage> {
                 ? DateFormat('yyyy-MM-dd HH:mm').format(DateTime.parse(item['createTime']))
                 : "未知时间",
             "duration": item['duration'] ?? "未知",
-            "number": item['number'] ?? item['content']?.toString().split(" ").first ?? "未知号码",
+            "number": item['phoneNumber'] ?? item['number'] ?? "未知号码",
             "location": item['location'] ?? "未知",
             "type": item['modelResult'] ?? "疑似诈骗",
             "status": item['userConfirm'] == 1 ? "已确认" : (item['userConfirm'] == 0 ? "误报" : "待核实"),
@@ -71,7 +71,7 @@ class ChildAntiFraudPageState extends State<ChildAntiFraudPage> {
           };
 
           // 这里的逻辑根据实际业务划分：
-          if (record['type']!.contains("拦截")) {
+          if (item['recordType'] == 'INTERCEPT') {
             intercepts.add(record);
           } else {
             warnings.add(record);
@@ -297,6 +297,8 @@ class ChildAntiFraudPageState extends State<ChildAntiFraudPage> {
                     ],
                   ),
                   const SizedBox(height: 6),
+                  Text("受保护长辈：${record['elderName']}", style: TextStyle(color: blue600, fontSize: 13, fontWeight: FontWeight.w500)),
+                  const SizedBox(height: 4),
                   Text("${record['location']} | ${record['time']}", style: TextStyle(color: gray500, fontSize: 15)),
                 ],
               ),
