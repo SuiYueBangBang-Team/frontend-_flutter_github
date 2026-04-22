@@ -169,6 +169,7 @@ public class AntiFraudUtils {
                     Log.d(TAG, "🛡️ [拦截同步] 服务器响响应码: " + response.code());
                     if (response.isSuccessful()) {
                         Log.i(TAG, "✅ [拦截同步] 实时上报成功: " + phoneNumber);
+                        markRecordSynced(context, phoneNumber);
                     } else {
                         String errorBody = response.body() != null ? response.body().string() : "no body";
                         Log.e(TAG, "❌ [拦截同步] 服务器拒绝上报, Body: " + errorBody);
@@ -178,6 +179,24 @@ public class AntiFraudUtils {
             });
         } catch (Exception e) {
             Log.e(TAG, "❌ [拦截同步] 构建流程异常", e);
+        }
+    }
+
+    private static void markRecordSynced(Context context, String phoneNumber) {
+        try {
+            SharedPreferences prefs = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE);
+            String existing = prefs.getString("flutter.blockedCallRecords", "[]");
+            JSONArray records = new JSONArray(existing);
+            for (int i = 0; i < records.length(); i++) {
+                JSONObject r = records.getJSONObject(i);
+                if (phoneNumber.equals(r.optString("number")) && !r.optBoolean("synced", false)) {
+                    r.put("synced", true);
+                    break;
+                }
+            }
+            prefs.edit().putString("flutter.blockedCallRecords", records.toString()).apply();
+        } catch (Exception e) {
+            Log.e(TAG, "❌ [拦截同步] 更新 synced 状态失败", e);
         }
     }
 

@@ -119,17 +119,49 @@ class _ElderAntiFraudPageState extends State<ElderAntiFraudPage> with WidgetsBin
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.reload();
+      final userId = prefs.getString('userId') ?? '';
+
+      // 从服务器拉取
+      List<Map<String, String>> serverRecords = [];
+      if (userId.isNotEmpty) {
+        try {
+          final response = await ApiClient().get('/api/fraud/reports', queryParameters: {'userId': userId});
+          if (response != null && response is List) {
+            for (var item in response) {
+              final modelResult = (item['modelResult'] ?? '').toString();
+              if (item['recordType'] == 'INTERCEPT' || modelResult.contains('拦截')) {
+                serverRecords.add({
+                  'number': item['phoneNumber'] ?? '',
+                  'type': (item['modelResult'] ?? '').toString().replaceAll(' [系统拦截]', ''),
+                  'time': item['createTime'] ?? '',
+                  'location': item['location'] ?? '',
+                  'synced': 'true',
+                });
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint("从服务器拉取拦截记录失败: $e");
+        }
+      }
+
+      // 本地记录
       final jsonStr = prefs.getString('blockedCallRecords') ?? '[]';
-      final List<dynamic> list = jsonDecode(jsonStr);
+      final List<dynamic> localList = jsonDecode(jsonStr);
+      final localRecords = localList.map((e) {
+        final m = e as Map;
+        return m.map((k, v) => MapEntry(k.toString(), v?.toString() ?? ''));
+      }).toList();
+
+      // 合并：服务器优先，本地未同步的补充进去
+      final serverNumbers = serverRecords.map((r) => r['number']).toSet();
+      final unsynced = localRecords.where((r) => r['synced'] != 'true' && !serverNumbers.contains(r['number'])).toList();
+
       setState(() {
-        _records = list.map((e) {
-          final m = e as Map;
-          return m.map((k, v) => MapEntry(k.toString(), v?.toString() ?? ''));
-        }).toList();
+        _records = [...serverRecords, ...unsynced];
       });
-      
-      // ✨ [新增] 只有在列表不为空时触发补发巡检
-      if (_records.isNotEmpty) {
+
+      if (unsynced.isNotEmpty) {
         _syncRecordsToServer();
       }
     } catch (e) {
@@ -312,7 +344,7 @@ class _ElderAntiFraudPageState extends State<ElderAntiFraudPage> with WidgetsBin
 
   Widget _buildFunctionList() {
     return ListView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.only(left: 20, right: 20, top: 20, bottom: 120),
       children: [
         _buildStatusCard(),
         const SizedBox(height: 20),
@@ -427,7 +459,7 @@ class _ElderAntiFraudPageState extends State<ElderAntiFraudPage> with WidgetsBin
       );
     }
     return ListView.separated(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.only(left: 20, right: 20, top: 20, bottom: 120),
       itemCount: _records.length,
       separatorBuilder: (context, index) => Divider(color: gray100, height: 32),
       itemBuilder: (context, index) {

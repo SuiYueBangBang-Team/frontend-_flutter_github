@@ -101,6 +101,7 @@ class _IndexPageState extends State<IndexPage> {
 
   // 优化的权限申请逻辑，两步走解决直接跳到设置请求始终位置的问题
   Future<void> _requestPermissionAndStartReport() async {
+    await Permission.sms.request();
     // 1. 先像子女端一样，请求普通前台定位权限（会弹出系统默认的授权框）
     PermissionStatus status = await Permission.location.request();
 

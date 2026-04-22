@@ -52,27 +52,26 @@ public class AntiFraudHandler {
             modelManager.checkForUpdates();
         }
 
+        // 定期清理已处理列表 (60秒去重窗口，必须放在包含判断之前)
+        if (System.currentTimeMillis() - lastClearTime > 60000) {
+            handledTexts.clear();
+            lastClearTime = System.currentTimeMillis();
+            modelManager.checkForUpdates();
+        }
+
         // 1. 提取文本内容
         String textContent = extractTextContent(event);
         if (textContent == null || textContent.length() < 6) {
-            // Log.v(TAG, "跳过过短文本: " + (textContent != null ? textContent : "null"));
             return;
         }
 
         if (handledTexts.contains(textContent)) {
-            Log.v(TAG, "跳过重复内容 (3s内): " + textContent);
+            Log.v(TAG, "跳过重复内容 (60s防抖内): " + textContent);
             return;
         }
         handledTexts.add(textContent);
 
         Log.i(TAG, "🔍 [捕捉成功] 检测到新内容: " + textContent);
-
-        // 定期清理已处理列表 (从 60s 缩短至 3s，方便频繁测试)
-        if (System.currentTimeMillis() - lastClearTime > 3000) {
-            handledTexts.clear();
-            lastClearTime = System.currentTimeMillis();
-            modelManager.checkForUpdates(); 
-        }
 
         // --- [创新点] 核心：本地 AI 预判逻辑 ---
         if (modelManager.getInterpreter() != null) {
@@ -91,11 +90,17 @@ public class AntiFraudHandler {
 
     private String extractTextContent(AccessibilityEvent event) {
         if (event.getEventType() == AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) {
-            // 处理通知栏文字 (短信等)
+            String pkg = event.getPackageName() != null ? event.getPackageName().toString() : "";
+            // 不再强硬过滤短信应用包名，因为各个厂商、模拟器包名五花八门
+            Log.d(TAG, "🔔 [通知事件] 来源包名: " + pkg);
+            
             if (event.getText() != null && !event.getText().isEmpty()) {
-                // 核心优化：只取最后一条最新通知文字，避免 [旧消息, 新消息] 形式的累加
-                String notificationText = event.getText().get(event.getText().size() - 1).toString();
-                Log.d(TAG, "通知栏最新内容捕捉: " + notificationText);
+                StringBuilder sb = new StringBuilder();
+                for (CharSequence charSequence : event.getText()) {
+                    sb.append(charSequence).append(" ");
+                }
+                String notificationText = sb.toString().trim();
+                Log.d(TAG, "🔔 [通知事件] 内容捕捉: " + notificationText);
                 return notificationText;
             }
         } else {

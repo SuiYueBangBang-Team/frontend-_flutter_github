@@ -62,6 +62,7 @@ class VoiceIntentHandler {
     'WECHAT_SCAN': _openWeChatScan,
     'WECHAT_VOICE_CALL': _startWeChatVoiceCall,
     'WECHAT_SEND_MESSAGE': _sendWeChatMessage,
+    'WECHAT_PAYMENT': _openWeChatPayment, // 💡 新增：微信付款码
     'OPEN_APP': _openAppByName,
     'SEARCH_IN_APP': _searchInApp, // 💡 新增应用内搜索支持
     // 💡 新增：高德地图导航
@@ -163,6 +164,28 @@ class VoiceIntentHandler {
       print('微信扫一扫无障碍触发失败: $e');
     }
     await _launchAnyApp(['weixin://dl/scan']);
+  }
+
+  // 💡 新增：微信付款码 - 拉起微信 → 点击「+」 → 点击弹出菜单中「收付款」
+  // 对应 ActionEnum: WECHAT_PAYMENT
+  static Future<void> _openWeChatPayment(Map<String, dynamic> params) async {
+    print('💳 WECHAT_PAYMENT 触发，尝试打开微信付款码');
+    try {
+      final ok = await _accessibilityChannel.invokeMethod<bool>('startWeChatPayment');
+      if (ok == true) {
+        print('✅ 微信付款码已通过无障碍服务启动');
+        return;
+      }
+    } catch (e) {
+      print('⚠️ 微信付款码无障碍通道调用失败，回退到 Deep Link: $e');
+    }
+    // 兑底：尝试 Deep Link 直接打开微信付款页面
+    bool launched = await _launchAnyApp(['weixin://dl/businessWebview?action=get_paid_qr']);
+    if (!launched) {
+      // 最终兑底：只打开微信
+      print('🔄 Deep Link 失败，仅打开微信主界面');
+      await _launchAnyApp(['weixin://']);
+    }
   }
 
   // 💡 5. 核心：实现拨打微信语音电话

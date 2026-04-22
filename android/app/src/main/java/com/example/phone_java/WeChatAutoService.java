@@ -22,12 +22,14 @@ public class WeChatAutoService {
     private static final String TAG = "WeChatAuto";
     private static final String WECHAT_PACKAGE = "com.tencent.mm";
 
-    // 核心节点 ID
+    // 核心节点 ID（均已通过 uiautomatorviewer 在真机上抓取确认）
     private static final String ID_SEARCH_ENTRY = "com.tencent.mm:id/jha";
     private static final String ID_SEARCH_INPUT = "com.tencent.mm:id/d98";
     private static final String ID_MORE_FUNCTION = "com.tencent.mm:id/bjz";
     private static final String ID_MAIN_MORE = "com.tencent.mm:id/jga";
+    // 图片抓取：收付款菜单文字节点 resource-id="com.tencent.mm:id/obc"，text="收付款"
     private static final String ID_SCAN_MENU_TEXT = "com.tencent.mm:id/obc";
+    private static final String ID_PAYMENT_TEXT   = "com.tencent.mm:id/obc"; // 收付款与扫一扫共用同一菜单列表项 ID
     private static final String ID_SCAN_MENU_ROW = "com.tencent.mm:id/n7g";
     private static final String ID_SEND_BTN = "com.tencent.mm:id/bql";
     private static final String ID_SEND_BAR = "com.tencent.mm:id/bqn";
@@ -44,6 +46,9 @@ public class WeChatAutoService {
     private static final int STEP_CLICK_POPUP_VOICE = 6;
     private static final int STEP_SCAN_MAIN_MORE = 20;
     private static final int STEP_SCAN_MENU_ITEM = 21;
+    // 💡 新增：微信付款码状态机步骤
+    private static final int STEP_PAYMENT_MAIN_MORE   = 30; // 点击主界面「+」按钮
+    private static final int STEP_PAYMENT_CLICK_ITEM  = 31; // 点击弹出菜单中「收付款」
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private int step = STEP_IDLE;
@@ -51,6 +56,7 @@ public class WeChatAutoService {
     private String targetMessage = "";
     private long lastHandledRequestId = -1L;
     private long lastHandledScanRequestId = -1L;
+    private long lastHandledPaymentRequestId = -1L;
     private long stepStartTime = 0L;
     private AccessibilityService serviceInstance;
 
@@ -67,6 +73,15 @@ public class WeChatAutoService {
             lastHandledScanRequestId = pendingScanId;
             stepStartTime = System.currentTimeMillis();
             Log.d(TAG, "========== 📷 微信动作：扫一扫 ==========");
+        }
+
+        // 💡 新增：检测「微信付款码」任务
+        long pendingPaymentId = getPendingPaymentRequestId(service);
+        if (step == STEP_IDLE && pendingPaymentId > 0 && pendingPaymentId != lastHandledPaymentRequestId) {
+            step = STEP_PAYMENT_MAIN_MORE;
+            lastHandledPaymentRequestId = pendingPaymentId;
+            stepStartTime = System.currentTimeMillis();
+            Log.d(TAG, "========== 💳 微信动作：打开付款码 ==========");
         }
 
         if (step == STEP_IDLE && pendingRequestId > 0 && pendingRequestId != lastHandledRequestId) {
@@ -86,6 +101,8 @@ public class WeChatAutoService {
             Log.e(TAG, "超时卡死，重置");
             if (step == STEP_SCAN_MAIN_MORE || step == STEP_SCAN_MENU_ITEM) {
                 clearPendingScanTask(service);
+            } else if (step == STEP_PAYMENT_MAIN_MORE || step == STEP_PAYMENT_CLICK_ITEM) {
+                clearPendingPaymentTask(service);
             } else {
                 clearPendingTask(service);
             }
@@ -184,6 +201,24 @@ public class WeChatAutoService {
                         success = true;
                     }
                     break;
+                // 💡 新增：微信付款码自动化
+                case STEP_PAYMENT_MAIN_MORE:
+                    // 点击微信主界面底部「+」更多按钮（jga 为主页级别的更多，图片抓取确认）
+                    if (AccessibilityUtils.clickByViewId(root, ID_MAIN_MORE) || AccessibilityUtils.clickByAnyDesc(root, "更多功能")) {
+                        step = STEP_PAYMENT_CLICK_ITEM;
+                        success = true;
+                        handler.postDelayed(this, 700); // 等待弹出菜单展开
+                        return;
+                    }
+                    break;
+                case STEP_PAYMENT_CLICK_ITEM:
+                    // 在弹出菜单中点击「收付款」（图片抓取：text="收付款"，resource-id obc）
+                    if (clickWeChatPaymentMenuItem()) {
+                        step = STEP_IDLE;
+                        clearPendingPaymentTask(serviceInstance);
+                        success = true;
+                    }
+                    break;
             }
 
             if (!success && step != STEP_IDLE) {
@@ -248,6 +283,31 @@ public class WeChatAutoService {
         return false;
     }
 
+    /**
+     * 在弹出菜单中点击「收付款」
+     * 图片中抓取：text="收付款"，resource-id="com.tencent.mm:id/obc"（与扫一扫同一列表 ID，靠文字区分）
+     * 策略1：遍历所有窗口按文字匹配
+     * 策略2：遍历所有窗口按 ID 精确查找包含"收付款"文字的节点
+     */
+    private boolean clickWeChatPaymentMenuItem() {
+        if (serviceInstance == null) return false;
+        // 先尝试当前活跃窗口
+        AccessibilityNodeInfo activeRoot = serviceInstance.getRootInActiveWindow();
+        if (activeRoot != null) {
+            if (AccessibilityUtils.clickByAnyText(activeRoot, "收付款", "付款")) return true;
+        }
+        // 再遍历全部窗口（弹出菜单可能是独立 window）
+        List<AccessibilityWindowInfo> windows = serviceInstance.getWindows();
+        if (windows == null) return false;
+        for (AccessibilityWindowInfo window : windows) {
+            AccessibilityNodeInfo root = window.getRoot();
+            if (root == null) continue;
+            if (AccessibilityUtils.clickByAnyText(root, "收付款", "付款")) return true;
+            if (AccessibilityUtils.clickByAnyDesc(root, "收付款", "付款码")) return true;
+        }
+        return false;
+    }
+
     private String getPendingContact(Context context) {
         return context.getSharedPreferences("com.example.phone_java", Context.MODE_PRIVATE).getString("wechat_contact", "").trim();
     }
@@ -260,8 +320,14 @@ public class WeChatAutoService {
     private long getPendingScanRequestId(Context context) {
         return context.getSharedPreferences("com.example.phone_java", Context.MODE_PRIVATE).getLong("wechat_scan_request_id", -1L);
     }
+    private long getPendingPaymentRequestId(Context context) {
+        return context.getSharedPreferences("com.example.phone_java", Context.MODE_PRIVATE).getLong("wechat_payment_request_id", -1L);
+    }
     private void clearPendingScanTask(Context context) {
         context.getSharedPreferences("com.example.phone_java", Context.MODE_PRIVATE).edit().remove("wechat_scan_request_id").apply();
+    }
+    private void clearPendingPaymentTask(Context context) {
+        context.getSharedPreferences("com.example.phone_java", Context.MODE_PRIVATE).edit().remove("wechat_payment_request_id").apply();
     }
     private void clearPendingTask(Context context) {
         context.getSharedPreferences("com.example.phone_java", Context.MODE_PRIVATE).edit().remove("wechat_contact").remove("wechat_message").remove("wechat_request_id").apply();

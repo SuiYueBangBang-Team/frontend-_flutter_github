@@ -51,6 +51,7 @@ public class MainActivity extends FlutterActivity {
     public static final String KEY_WECHAT_CONTACT = "wechat_contact";
     public static final String KEY_WECHAT_REQUEST_ID = "wechat_request_id";
     public static final String KEY_WECHAT_SCAN_REQUEST_ID = "wechat_scan_request_id";
+    public static final String KEY_WECHAT_PAYMENT_REQUEST_ID = "wechat_payment_request_id"; // 💡 新增：微信付款码任务 ID
     public static final String KEY_AMAP_REQUEST_ID = "amap_request_id";
     public static final String KEY_AMAP_DESTINATION = "amap_destination";
     public static final String KEY_MEITUAN_REQUEST_ID = "meituan_request_id";
@@ -106,6 +107,10 @@ public class MainActivity extends FlutterActivity {
                         result.success(ok);
                     } else if ("startWeChatScan".equals(call.method)) {
                         boolean ok = cacheWeChatScanAndLaunch();
+                        result.success(ok);
+                    } else if ("startWeChatPayment".equals(call.method)) {
+                        // 💡 新增：微信付款码
+                        boolean ok = cacheWeChatPaymentAndLaunch();
                         result.success(ok);
                     } else if ("startAmapNavi".equals(call.method)) {
                         String destination = call.argument("destination");
@@ -427,6 +432,27 @@ public class MainActivity extends FlutterActivity {
             return true;
         }
         android.util.Log.e(TAG, "❌ 未找到微信包名");
+        return false;
+    }
+
+    /**
+     * 💡 新增：拉起微信并由无障碍服务自动导航到「收付款」页面
+     * 流程：微信主界面 → 点击「+」更多按钮 → 点击弹出菜单中「收付款」
+     */
+    private boolean cacheWeChatPaymentAndLaunch() {
+        SharedPreferences prefs = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        prefs.edit()
+                .putLong(KEY_WECHAT_PAYMENT_REQUEST_ID, System.currentTimeMillis())
+                .apply();
+        android.util.Log.d(TAG, "✅ 微信付款码任务已写入 wechat_payment_request_id");
+        Intent launchIntent = getPackageManager().getLaunchIntentForPackage(WECHAT_PACKAGE);
+        if (launchIntent != null) {
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(launchIntent);
+            android.util.Log.d(TAG, "✅ 微信已启动，等待无障碍服务自动打开收付款");
+            return true;
+        }
+        android.util.Log.e(TAG, "❌ 未找到微信包名: " + WECHAT_PACKAGE);
         return false;
     }
 

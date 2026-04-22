@@ -15,9 +15,13 @@ import android.view.accessibility.AccessibilityNodeInfo;
 public class PinduoduoAutoService {
 
     private static final String TAG = "PinduoduoAuto";
-    private static final String ID_HOME_SEARCH_ENTRY = "com.xunmeng.pinduoduo:id/search_container";
-    private static final String ID_SEARCH_ET = "com.xunmeng.pinduoduo:id/search_input_et";
-    private static final String ID_SEARCH_BTN = "com.xunmeng.pinduoduo:id/search_confirm_btn";
+    // 📷 以下节点 ID 均通过 UIAutomatorViewer 在真机上抓取确认（见项目自动化.md 图片记录）
+    // 图男2：搜索入口容器 LinearLayout resource-id="com.xunmeng.pinduoduo:id/pdf"
+    // 图男3：搜索页 EditText content-desc="搜索"、搜索按钮 TextView text="搜索"
+    //          resource-id="com.xunmeng.pinduoduo:id/pdf" (same namespace, search_input EditText)
+    private static final String ID_HOME_SEARCH_ENTRY = "com.xunmeng.pinduoduo:id/pdf";   // 首页搜索入口
+    private static final String ID_SEARCH_ET = "com.xunmeng.pinduoduo:id/pdf";           // 搜索页输入框（内部的 EditText）
+    private static final String ID_SEARCH_BTN = "com.xunmeng.pinduoduo:id/pdf";         // 搜索按钮（用文字匹配作为主要策略）
 
     private static final int STEP_IDLE              = 0;
     private static final int STEP_CLICK_SEARCH_ENTRY = 1;
@@ -70,25 +74,35 @@ public class PinduoduoAutoService {
             boolean success = false;
             switch (step) {
                 case STEP_CLICK_SEARCH_ENTRY:
-                    if (AccessibilityUtils.clickByViewId(root, ID_HOME_SEARCH_ENTRY) || AccessibilityUtils.clickByAnyText(root, "搜索拼多多", "搜索")) {
+                    // 策略1：点击 ID（图男2 抓取：resource-id="com.xunmeng.pinduoduo:id/pdf"）
+                    // 策略2：按文字匹配搜索入口
+                    // 策略3：按 content-description 匹配
+                    if (AccessibilityUtils.clickByViewId(root, ID_HOME_SEARCH_ENTRY)
+                            || AccessibilityUtils.clickByAnyText(root, "搜索拼多多", "搜索")
+                            || AccessibilityUtils.clickByAnyDesc(root, "搜索拼多多", "搜索")) {
                         step = STEP_INPUT_KEYWORD;
                         success = true;
-                        handler.postDelayed(this, 800);
+                        handler.postDelayed(this, 800); // 等待搜索页加载
                         return;
                     }
                     break;
                 case STEP_INPUT_KEYWORD:
+                    // 策略1：精确 ID 匹配输入框
+                    // 策略2：页面内第一个 EditText（字符串匹配 class 名）
                     AccessibilityNodeInfo input = AccessibilityUtils.findFirstNodeByViewId(root, ID_SEARCH_ET);
                     if (input == null) input = AccessibilityUtils.findFirstNodeByClass(root, "android.widget.EditText");
                     if (input != null && AccessibilityUtils.inputText(input, targetKeyword)) {
                         step = STEP_CLICK_SEARCH_BTN;
                         success = true;
-                        handler.postDelayed(this, 500);
+                        handler.postDelayed(this, 600);
                         return;
                     }
                     break;
                 case STEP_CLICK_SEARCH_BTN:
-                    if (AccessibilityUtils.clickByViewId(root, ID_SEARCH_BTN) || AccessibilityUtils.clickByAnyText(root, "搜索")) {
+                    // 策略1：点击 搜索按钮（图男3 抓取：text="搜索"，resource-id属 com.xunmeng.pinduoduo:id/pdf）
+                    // 策略2：按文字匹配「搜索」
+                    if (AccessibilityUtils.clickByAnyText(root, "搜索")
+                            || AccessibilityUtils.clickByViewId(root, ID_SEARCH_BTN)) {
                         step = STEP_IDLE;
                         clearPendingTask(serviceInstance);
                         success = true;
