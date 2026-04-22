@@ -16,10 +16,10 @@ class ApiClient {
 
   ApiClient._internal() {
     BaseOptions options = BaseOptions(
-      // baseUrl: "http://10.0.2.2:9000", // 模拟测试(模拟机)/
+      baseUrl: "http://10.0.2.2:9000", // 模拟测试(模拟机)/
       // baseUrl: "http://127.0.0.1:9000",   // 无线测试(真机)
       // baseUrl: "http://10.96.97.231:9000",
-      baseUrl: "http://43.136.23.112:9000",
+      // baseUrl: "http://43.136.23.112:9000",
 
       connectTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 60),

@@ -302,7 +302,7 @@ class ChildAntiFraudPageState extends State<ChildAntiFraudPage> with SingleTicke
       child: Row(
         children: [
           _toggleBtn('短信预警', 0),
-          _toggleBtn('拦截记录', 1),
+          _toggleBtn('电话拦截', 1),
         ],
       ),
     );
