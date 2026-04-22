@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import '../../utils/api_client.dart';
+import '../../utils/region_service.dart';
 import 'child_comm_post_detail.dart';
 // 用于跨页面通知个人资料已更新
 final ValueNotifier<bool> profileUpdateNotifier = ValueNotifier(false);
@@ -39,10 +40,14 @@ class _ChildCommunityPageState extends State<ChildCommunityPage> {
   void initState() {
     super.initState();
     loadUserInfo();
-    loadProvinceList();
-  // 一旦收到资料更新的信号，立刻静默刷新列表
+    _initRegionData();
     profileUpdateNotifier.addListener(_onProfileUpdated);
-}
+  }
+
+  Future<void> _initRegionData() async {
+    await RegionService().init();
+    loadProvinceList();
+  }
 
 // 处理刷新的逻辑
 void _onProfileUpdated() {
@@ -77,26 +82,18 @@ void _onProfileUpdated() {
   }
 
   loadProvinceList() {
-    provinces = ["全部省份", "广东省", "北京市", "上海市", "浙江省", "江苏省"];
+    provinces = RegionService().getProvinces();
     setState(() {});
   }
 
   loadCityList(String province) {
-    if (province == "广东省") cities = ["全部城市", "广州市", "深圳市"];
-    else if (province == "北京市") cities = ["全部城市", "北京市"];
-    else if (province == "上海市") cities = ["全部城市", "上海市"];
-    else if (province == "浙江省") cities = ["全部城市", "杭州市"];
-    else if (province == "江苏省") cities = ["全部城市", "南京市"];
-    else cities = ["全部城市"];
+    cities = RegionService().getCities(province);
+    districts = ["全部区县"];
     setState(() {});
   }
 
   loadDistrictList(String city) {
-    if (city == "广州市") districts = ["全部区县", "番禺区", "天河区"];
-    else if (city == "深圳市") districts = ["全部区县", "南山区", "福田区"];
-    else if (city == "北京市") districts = ["全部区县", "海淀区", "朝阳区"];
-    else if (city == "南京市") districts = ["全部区县", "玄武区"];
-    else districts = ["全部区县"];
+    districts = RegionService().getDistricts(province!, city);
     setState(() {});
   }
 
@@ -104,15 +101,13 @@ void _onProfileUpdated() {
     setState(() => isLoading = true);
 
     try {
-      List<String> queryParams = [];
-      if (province != null && province != "全部省份") queryParams.add("province=$province");
-      if (city != null && city != "全部城市") queryParams.add("city=$city");
-      if (district != null && district != "全部区县") queryParams.add("district=$district");
-      if (searchController.text.isNotEmpty) queryParams.add("keyword=${searchController.text}");
+      Map<String, dynamic> params = {};
+      if (province != null && province != "全部省份") params["province"] = province;
+      if (city != null && city != "全部城市") params["city"] = city;
+      if (district != null && district != "全部区县") params["district"] = district;
+      if (searchController.text.isNotEmpty) params["keyword"] = searchController.text;
 
-      String queryString = queryParams.isNotEmpty ? "?${queryParams.join('&')}" : "";
-
-      var response = await ApiClient().get('/api/community/post/list$queryString');
+      var response = await ApiClient().get('/api/community/post/list', queryParameters: params.isEmpty ? null : params);
 
       if (response != null) {
         List<dynamic> list = response is List ? response : (response['data'] ?? []);
@@ -196,12 +191,14 @@ void _onProfileUpdated() {
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
+      constraints: const BoxConstraints(maxHeight: 240),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8)],
       ),
-      child: Column(
+      child: SingleChildScrollView(
+        child: Column(
         children: data.map((e) {
           return ListTile(
             title: Text(e),
@@ -209,21 +206,32 @@ void _onProfileUpdated() {
               setState(() {
                 if (openType == "province") {
                   province = e == "全部省份" ? null : e;
-                  city = null; district = null;
-                  loadCityList(e);
+                  city = null;
+                  district = null;
+                  if (province != null) {
+                    loadCityList(province!);
+                  } else {
+                    cities = [];
+                    districts = ["全部区县"];
+                  }
                 } else if (openType == "city") {
                   city = e == "全部城市" ? null : e;
                   district = null;
-                  loadDistrictList(e);
-                } else {
+                  if (city != null) {
+                    loadDistrictList(city!);
+                  } else {
+                    districts = ["全部区县"];
+                  }
+                } else if (openType == "district") {
                   district = e == "全部区县" ? null : e;
                 }
                 openType = "";
-                loadPostList();
               });
+              loadPostList();
             },
           );
         }).toList(),
+        ),
       ),
     );
   }

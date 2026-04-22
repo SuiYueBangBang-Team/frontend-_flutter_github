@@ -1,6 +1,7 @@
 // AI辅助生成：Antigravity，2026-04-21
 // 功能：子女端反诈模块 - 短信预警(含确认训练闭环) + 拦截记录
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:phone_java/utils/api_client.dart';
 import 'package:intl/intl.dart';
@@ -33,6 +34,7 @@ class ChildAntiFraudPageState extends State<ChildAntiFraudPage> with SingleTicke
   bool _isLoading = true;
   List<Map<String, dynamic>> _warningRecords = [];
   List<Map<String, String>>  _interceptRecords = [];
+  Timer? _refreshTimer;
 
   late final AnimationController _fabAnim;
 
@@ -41,10 +43,12 @@ class ChildAntiFraudPageState extends State<ChildAntiFraudPage> with SingleTicke
     super.initState();
     _fabAnim = AnimationController(vsync: this, duration: const Duration(milliseconds: 400));
     fetchData();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) => fetchData());
   }
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     _fabAnim.dispose();
     super.dispose();
   }

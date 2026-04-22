@@ -19,7 +19,9 @@ class _CreatePostPageState extends State<CreatePostPage> {
 
   String? locationName;
   String? topicName;
-  String cityName = "定位中...";
+  String cityName = "";
+  String provinceName = "";
+  String districtName = "";
   bool showLocationPanel = false;
 
   List<Map> locationList = [];
@@ -33,7 +35,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
     loadCurrentLocation();
     loadRecommendLocation();
     loadTopicList();
-    loadCurrentCity();
+    // 删除 loadCurrentCity() 的调用，已由 loadCurrentLocation 统一处理
   }
 
   /// 修改后的真实定位方法
@@ -49,19 +51,15 @@ class _CreatePostPageState extends State<CreatePostPage> {
       setState(() {
         // locationName 只显示“XX市 · XX区”或“XX县 · XX村”
         locationName = locData['display'];
-        // 顺便把城市名也更新了，用于后续的定位面板过滤
-        cityName = locData['city'] ?? "定位失败";
+        // 保存完整的省市区信息，用于发帖字段
+        provinceName = locData['province'] ?? "";
+        cityName = locData['city'] ?? "";
+        districtName = locData['district'] ?? "";
       });
     }
   }
 
-
-  /// 当前城市
-  loadCurrentCity() async {
-    setState(() {
-      cityName = "肇庆市";
-    });
-  }
+  /// 删除旧的 loadCurrentCity 方法，已并入 loadCurrentLocation
 
   /// 推荐定位列表
   loadRecommendLocation() async {
@@ -157,7 +155,9 @@ class _CreatePostPageState extends State<CreatePostPage> {
         "content": contentController.text.trim(),
         "images": imagesStr,
         "location": locationName,
-        "city": cityName
+        "province": provinceName,
+        "city": cityName,
+        "district": districtName,
       });
 
       if(mounted) {
