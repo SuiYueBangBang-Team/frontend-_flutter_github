@@ -1,202 +1,131 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bmflocation/flutter_bmflocation.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'dart:async'; // 补充引入 Completer 需要的包
+import 'dart:async';
 
 class LocationService {
-  // 1. 单例模式，确保全局只有一个定位实例
   static final LocationService _instance = LocationService._internal();
   factory LocationService() => _instance;
   LocationService._internal();
 
   final LocationFlutterPlugin _locationPlugin = LocationFlutterPlugin();
-  bool _isInitialized = false;
+  bool _isServiceRunning = false;
 
-  // 2. 缓存最新的经纬度，方便发帖页面直接读取
+  // 1. 状态存储
   double? latitude;
   double? longitude;
 
-  // 3. 监听器列表，支持多个页面同时监听定位变化
-  final List<Function(double lat, double lng)> _listeners = [];
+  // 2. 消费者队列
+  final List<Function(double lat, double lng)> _listeners = []; // 持续监听者（地图）
+  final List<Completer<Map<String, String>>> _addressRequests = []; // 单次请求者（发帖）
 
-  // 添加监听
-  void addListener(Function(double, double) listener) {
-    if (!_listeners.contains(listener)) {
-      _listeners.add(listener);
-    }
-  }
-
-  // 移除监听
-  void removeListener(Function(double, double) listener) {
-    _listeners.remove(listener);
-  }
-
-  /// 🌟 新增：专门为社区、发帖页准备的“单次逆地理编码（解析地址）”方法
-  Future<String?> getSingleAddress() async {
-    // 1. 创建一个“任务承诺 (Completer)”
-    Completer<String?> completer = Completer();
-
-    try {
-      _locationPlugin.setAgreePrivacy(true);
-
-      BaiduLocationAndroidOption androidOption = BaiduLocationAndroidOption(
-        locationMode: BMFLocationMode.hightAccuracy,
-        isNeedAddress: true, // 必须开启地址解析
-        openGps: true,
-        coordType: BMFLocationCoordType.bd09ll,
-        scanspan: 1000,
-      );
-      await _locationPlugin.prepareLoc(androidOption.getMap(), {});
-
-      _locationPlugin.seriesLocationCallback(callback: (BaiduLocation result) {
-        // 2. 拦截：如果没有解析出中文地址，直接 return 等下一次
-        if (result.address == null && result.locationDetail == null) {
-          return;
-        }
-
-        // 3. 拿到真实地址
-        String realAddress = result.locationDetail ?? result.address ?? "未知位置";
-
-        // 4. 如果这个“承诺”还没兑现，我们就兑现它（返回数据）
-        if (!completer.isCompleted) {
-          completer.complete(realAddress);
-          // 💡 拿到中文地址后，立刻掐断底层定位，省电！
-          _locationPlugin.stopLocation();
-        }
-      });
-
-      await _locationPlugin.startLocation();
-
-      // 5. 返回这个“承诺”，调用它的页面会在这里一直等（await），直到上面 complete
-      return completer.future;
-
-    } catch (e) {
-      // debugPrint("单次定位异常: $e");
-      if (!completer.isCompleted) completer.complete("定位失败");
-      return completer.future;
-    }
-  }
-
-  // 请求权限并开启定位
-  Future<bool> requestPermissionAndLocate() async {
+  /// 统一初始化并设置“中央分发器”
+  Future<void> _ensureInitialized() async {
+    // 权限检查
     PermissionStatus status = await Permission.location.request();
-    if (status.isGranted) {
-      await _initLocation();
-      return true;
-    }
-    return false;
+    if (!status.isGranted) return;
+
+    // 重点：只需设置一次全局回调
+    _locationPlugin.setAgreePrivacy(true);
+    _locationPlugin.seriesLocationCallback(callback: (BaiduLocation result) {
+      // A. 更新内部缓存
+      if (result.latitude != null && result.longitude != null) {
+        latitude = result.latitude;
+        longitude = result.longitude;
+      }
+
+      // B. 分发给持续监听者（地图页）
+      if (latitude != null && longitude != null) {
+        for (var listener in List.from(_listeners)) {
+          listener(latitude!, longitude!);
+        }
+      }
+
+      // C. 分发给单次请求者（发帖页）
+      if (result.address != null || result.district != null) {
+        if (_addressRequests.isNotEmpty) {
+          final locMap = {
+            "province": result.province ?? "",
+            "city": result.city ?? "",
+            "district": result.district ?? "",
+            "display": "${result.city ?? ""}${result.district ?? ""}${result.town ?? ""}",
+          };
+
+          // 履行所有待处理的“承诺”
+          for (var completer in List.from(_addressRequests)) {
+            if (!completer.isCompleted) completer.complete(locMap);
+          }
+          _addressRequests.clear();
+
+          // 优化策略：如果没有地图页在听，拿完地址就关掉引擎省电
+          _checkAndStopService();
+        }
+      }
+    });
   }
 
-  // 原汁原味的百度定位初始化逻辑
-  Future<void> _initLocation() async {
-    if (_isInitialized) {
-      // 如果已经初始化过，直接启动即可
-      _locationPlugin.startLocation();
-      return;
+  /// 智能停止：只有当没有人在听，且没有待处理请求时才真正关闭
+  void _checkAndStopService() {
+    if (_listeners.isEmpty && _addressRequests.isEmpty) {
+      _locationPlugin.stopLocation();
+      _isServiceRunning = false;
     }
+  }
 
-    try {
-      // debugPrint("📌 LocationService: 正在初始化百度定位...");
-      _locationPlugin.setAgreePrivacy(true);
+  /// 发帖页调用：获取精简地址
+  Future<Map<String, String>> getSimplifiedLocation() async {
+    await _ensureInitialized();
 
+    Completer<Map<String, String>> completer = Completer();
+    _addressRequests.add(completer);
+
+    if (!_isServiceRunning) {
       BaiduLocationAndroidOption androidOption = BaiduLocationAndroidOption(
         locationMode: BMFLocationMode.hightAccuracy,
         isNeedAddress: true,
-        openGps: true,
+        coordType: BMFLocationCoordType.bd09ll,
+      );
+      await _locationPlugin.prepareLoc(androidOption.getMap(), {});
+      await _locationPlugin.startLocation();
+      _isServiceRunning = true;
+    }
+
+    // 增加超时保护，防止永远卡死
+    return completer.future.timeout(const Duration(seconds: 10), onTimeout: () {
+      _addressRequests.remove(completer);
+      return {"display": "定位超时"};
+    });
+  }
+
+  /// 地图页调用：开始监听
+  void addListener(Function(double, double) listener) async {
+    if (!_listeners.contains(listener)) {
+      _listeners.add(listener);
+    }
+
+    await _ensureInitialized();
+    if (!_isServiceRunning) {
+      BaiduLocationAndroidOption androidOption = BaiduLocationAndroidOption(
+        locationMode: BMFLocationMode.hightAccuracy,
+        isNeedAddress: true, // 保持开启地址解析以兼容可能的地址显示需求
         coordType: BMFLocationCoordType.bd09ll,
         scanspan: 8000,
       );
       await _locationPlugin.prepareLoc(androidOption.getMap(), {});
-
-      _locationPlugin.seriesLocationCallback(callback: (BaiduLocation result) {
-        // debugPrint("📍 百度定位回调到达! 错误码=${result.errorCode}, 经度=${result.longitude}, 纬度=${result.latitude}");
-        if (result.latitude != null && result.longitude != null && result.latitude! > 1.0) {
-          latitude = result.latitude;
-          longitude = result.longitude;
-
-          // 通知所有正在监听的页面更新UI
-          for (var listener in _listeners) {
-            listener(latitude!, longitude!);
-          }
-        }
-      });
-
       await _locationPlugin.startLocation();
-      _isInitialized = true;
-      // debugPrint("📌 LocationService: 定位启动成功");
-    } catch (e) {
-      // debugPrint("❌ LocationService 定位异常: $e");
+      _isServiceRunning = true;
     }
   }
 
-  /// 🌟 修复后：获取精简版的地址信息（城市到区，农村到村）
-  Future<Map<String, String>> getSimplifiedLocation() async {
-    Completer<Map<String, String>> completer = Completer();
-
-    // 1. 修复点：在单次定位前，主动检查并申请权限
-    PermissionStatus status = await Permission.location.request();
-    if (!status.isGranted) {
-      return {"display": "定位权限被拒绝"};
-    }
-
-    try {
-      _locationPlugin.setAgreePrivacy(true);
-      BaiduLocationAndroidOption androidOption = BaiduLocationAndroidOption(
-        locationMode: BMFLocationMode.hightAccuracy,
-        isNeedAddress: true,
-        coordType: BMFLocationCoordType.bd09ll,
-      );
-      await _locationPlugin.prepareLoc(androidOption.getMap(), {});
-
-      _locationPlugin.seriesLocationCallback(callback: (BaiduLocation result) {
-        // 2. 修复点：绝不能直接 return 导致死锁。如果拿不到地址，也要 complete 释放 Future
-        if (result.address == null && result.district == null) {
-          if (!completer.isCompleted) {
-            completer.complete({"display": "无法获取详细地址"});
-            _locationPlugin.stopLocation();
-          }
-          return;
-        }
-
-        // 核心逻辑：地址精简处理
-        String city = result.city ?? "";
-        String district = result.district ?? "";
-        String town = result.town ?? "";
-
-        String displayAddress;
-        if (city.isNotEmpty && district.isNotEmpty) {
-          displayAddress = "$city$district";
-          if (town.isNotEmpty && !town.contains("街道")) {
-            displayAddress = "$city$district$town";
-          }
-        } else {
-          displayAddress = district.isNotEmpty ? district : "未知位置";
-        }
-
-        // 3. 成功拿到地址，正常释放 Future
-        if (!completer.isCompleted) {
-          completer.complete({
-            "province": result.province ?? "",
-            "city": city,
-            "district": district,
-            "display": displayAddress,
-          });
-          _locationPlugin.stopLocation();
-        }
-      });
-
-      await _locationPlugin.startLocation();
-      return completer.future;
-    } catch (e) {
-      return {"display": "定位组件异常"};
-    }
+  /// 移除监听
+  void removeListener(Function(double, double) listener) {
+    _listeners.remove(listener);
+    _checkAndStopService();
   }
 
-  // 停止定位 (可以在App退出或不需要后台定位时调用)
-  void stopLocation() {
-    _locationPlugin.stopLocation();
+  // 旧方法适配
+  Future<bool> requestPermissionAndLocate() async {
+    await _ensureInitialized();
+    return true;
   }
-
-
-
 }
