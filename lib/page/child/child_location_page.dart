@@ -23,6 +23,10 @@ class ChildLocationPage extends StatefulWidget {
 class _ChildLocationPageState extends State<ChildLocationPage> {
   List<Map<String, dynamic>> boundDevices = [];
   bool isLoading = true;
+
+// 💡 新增：记录已经弹过预警窗的设备 ID，防止 10 秒轮询时疯狂弹窗
+  final Set<String> _alertedDeviceIds = {};
+
   String? selectedDeviceId;
   //  新增：百度地图控制器
   BMFMapController? myMapController;
@@ -83,7 +87,6 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
   //  真实接口：获取已绑定的长辈设备列表
   //  isSilent 参数，用于控制是否显示转圈加载动画
   Future<void> _fetchLocationData({bool isSilent = false}) async {
-// 💡只有在列表完全为空（首次进页面）时，才允许显示全屏的加载圈
     if (boundDevices.isEmpty && !isSilent) {
       setState(() => isLoading = true);
     }
@@ -97,7 +100,6 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
           boundDevices = list.map((e) => {
             "id": e['id'].toString(),
             "name": e['name'] ?? "未知设备",
-            // 💡 动态显示文字状态
             "status": (e['isOnline'] == true) ? "在线" : "离线",
             "lat": e['lat'] ?? 30.5450,
             "lng": e['lng'] ?? 114.3100,
@@ -105,23 +107,85 @@ class _ChildLocationPageState extends State<ChildLocationPage> {
             "volume": e['volumeLevel'] ?? 0,
             "isOnline": e['isOnline'] ?? false,
             "memberId": e['memberId']?.toString() ?? '',
+            // 💡 1. 提取后端返回的越界状态
+            "isAnomaly": e['isAnomaly'] ?? false,
           }).toList();
 
           if (boundDevices.isNotEmpty && selectedDeviceId == null) {
             selectedDeviceId = boundDevices.first['id'];
           }
+
+          // 💡 2. 核心新增：越界检查与弹窗逻辑
+          for (var device in boundDevices) {
+            String devId = device['id'];
+            bool isAnomaly = device['isAnomaly'];
+            String devName = device['name'];
+
+            if (isAnomaly) {
+              // 如果处于异常状态，且之前没弹过窗，则弹窗并记录
+              if (!_alertedDeviceIds.contains(devId)) {
+                _alertedDeviceIds.add(devId);
+                _showAnomalyAlert(devName);
+              }
+            } else {
+              // 如果长辈走回了安全区，解除警报标记，以便下次越界时能再次弹窗
+              _alertedDeviceIds.remove(devId);
+            }
+          }
+
         });
       }
     } catch (e) {
-      // debugPrint("拉取设备列表失败: $e");
       if (mounted && !isSilent) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("加载设备失败，请检查网络")));
       }
     } finally {
-      // 最终必须把 isLoading 归位
       if (mounted) setState(() => isLoading = false);
     }
   }
+
+
+  // 💡 新增：危险预警弹窗 UI
+  void _showAnomalyAlert(String deviceName) {
+    showDialog(
+      context: context,
+      barrierDismissible: false, // 强制用户必须点击按钮才能关闭，引起重视
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: Colors.white,
+        title: Row(
+          children: const [
+            Icon(Icons.warning_rounded, color: Colors.redAccent, size: 32),
+            SizedBox(width: 10),
+            Text("风险预警", style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Text(
+          "系统检测到「$deviceName」的实时位置已偏离日常安全活动区域！\n\n请尽快通过电话联系长辈或查看其具体位置，确认安全状况。",
+          style: const TextStyle(fontSize: 16, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("我知道了", style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () {
+              Navigator.pop(ctx);
+              // 如果你后续引入了 url_launcher 插件，这里可以写一键拨号
+              // launchUrl(Uri.parse('tel:$长辈手机号'));
+            },
+            child: const Text("立即联系", style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
 
 
   void _startRealtimeTracking() {
