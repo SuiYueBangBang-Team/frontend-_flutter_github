@@ -129,9 +129,15 @@ class LocationService {
     }
   }
 
-  /// 🌟 新增：获取精简版的地址信息（城市到区，农村到村）
+  /// 🌟 修复后：获取精简版的地址信息（城市到区，农村到村）
   Future<Map<String, String>> getSimplifiedLocation() async {
     Completer<Map<String, String>> completer = Completer();
+
+    // 1. 修复点：在单次定位前，主动检查并申请权限
+    PermissionStatus status = await Permission.location.request();
+    if (!status.isGranted) {
+      return {"display": "定位权限被拒绝"};
+    }
 
     try {
       _locationPlugin.setAgreePrivacy(true);
@@ -143,18 +149,23 @@ class LocationService {
       await _locationPlugin.prepareLoc(androidOption.getMap(), {});
 
       _locationPlugin.seriesLocationCallback(callback: (BaiduLocation result) {
-        if (result.address == null && result.district == null) return;
+        // 2. 修复点：绝不能直接 return 导致死锁。如果拿不到地址，也要 complete 释放 Future
+        if (result.address == null && result.district == null) {
+          if (!completer.isCompleted) {
+            completer.complete({"display": "无法获取详细地址"});
+            _locationPlugin.stopLocation();
+          }
+          return;
+        }
 
         // 核心逻辑：地址精简处理
         String city = result.city ?? "";
         String district = result.district ?? "";
-        String town = result.town ?? ""; // 乡镇/街道，通常对应用户说的“村”级
+        String town = result.town ?? "";
 
         String displayAddress;
-        // 如果有城市和区，且不是偏远地区，显示“城市·区”
         if (city.isNotEmpty && district.isNotEmpty) {
           displayAddress = "$city$district";
-          // 如果是农村环境（百度通常在 district 之后会有具体的 town）
           if (town.isNotEmpty && !town.contains("街道")) {
             displayAddress = "$city$district$town";
           }
@@ -162,12 +173,13 @@ class LocationService {
           displayAddress = district.isNotEmpty ? district : "未知位置";
         }
 
+        // 3. 成功拿到地址，正常释放 Future
         if (!completer.isCompleted) {
           completer.complete({
             "province": result.province ?? "",
             "city": city,
             "district": district,
-            "display": displayAddress, // 最终给用户看的精简地址
+            "display": displayAddress,
           });
           _locationPlugin.stopLocation();
         }
@@ -176,7 +188,7 @@ class LocationService {
       await _locationPlugin.startLocation();
       return completer.future;
     } catch (e) {
-      return {"display": "定位失败"};
+      return {"display": "定位组件异常"};
     }
   }
 
