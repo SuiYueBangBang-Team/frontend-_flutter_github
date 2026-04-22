@@ -32,7 +32,7 @@ import okhttp3.Response;
  */
 public class AntiFraudUtils {
     private static final String TAG = "AntiFraudUtils";
-    private static final String REPORT_URL = "http://10.96.97.231:9000/api/fraud/report-intercept";
+    private static final String REPORT_URL = "http://43.136.23.112:9000/api/fraud/report-intercept";
 
     private static final OkHttpClient client = new OkHttpClient.Builder()
             .connectTimeout(5, TimeUnit.SECONDS)

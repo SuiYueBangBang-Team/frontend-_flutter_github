@@ -21,7 +21,7 @@ class ApiClient {
       // baseUrl: "http://10.96.97.231:9000",
       // baseUrl: "http://172.20.10.6:9000",
 
-      // baseUrl: "http://43.136.23.112:9000",
+      baseUrl: "http://43.136.23.112:9000",
 
       connectTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 60),

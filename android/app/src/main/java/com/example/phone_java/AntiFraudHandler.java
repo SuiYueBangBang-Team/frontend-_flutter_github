@@ -29,7 +29,7 @@ import okhttp3.Response;
  */
 public class AntiFraudHandler {
     private static final String TAG = "AntiFraudHandler";
-    private static final String BACKEND_URL = "http://10.96.97.231:9000/api/fraud/check";
+    private static final String BACKEND_URL = "http://43.136.23.112:9000/api/fraud/check";
 
     private final OkHttpClient client = new OkHttpClient.Builder()
             .connectTimeout(5, TimeUnit.SECONDS)

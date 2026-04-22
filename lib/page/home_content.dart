@@ -38,7 +38,7 @@ class _HomeContentState extends State<HomeContent> with SingleTickerProviderStat
   // final String _baseUrl = "http://127.0.0.1:9000";
   // final String _baseUrl = "http://10.96.97.231:9000";
   // final String _baseUrl = "http://172.20.10.6:9000";
-  // final String _baseUrl = "http://43.136.23.112:9000";
+  final String _baseUrl = "http://43.136.23.112:9000";
 
   final List<Map<String, dynamic>> _messages = [
     {"role": "ai", "content": "您好！我是帮帮，有什么可以帮您？"},
