@@ -7,8 +7,6 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
-import android.view.accessibility.AccessibilityNodeInfo;
-
 import org.json.JSONObject;
 
 import java.io.IOException;
@@ -65,6 +63,12 @@ public class AntiFraudHandler {
             return;
         }
 
+        // 过滤验证码短信，避免误报和遮挡验证码通知
+        if (textContent.contains("验证码") || textContent.contains("verification code") || textContent.matches(".*\\b\\d{4,8}\\b.*")) {
+            Log.d(TAG, "跳过验证码类短信，不做反诈检测");
+            return;
+        }
+
         if (handledTexts.contains(textContent)) {
             Log.v(TAG, "跳过重复内容 (60s防抖内): " + textContent);
             return;
@@ -89,45 +93,17 @@ public class AntiFraudHandler {
     }
 
     private String extractTextContent(AccessibilityEvent event) {
-        if (event.getEventType() == AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) {
-            String pkg = event.getPackageName() != null ? event.getPackageName().toString() : "";
-            // 不再强硬过滤短信应用包名，因为各个厂商、模拟器包名五花八门
-            Log.d(TAG, "🔔 [通知事件] 来源包名: " + pkg);
-            
-            if (event.getText() != null && !event.getText().isEmpty()) {
-                StringBuilder sb = new StringBuilder();
-                for (CharSequence charSequence : event.getText()) {
-                    sb.append(charSequence).append(" ");
-                }
-                String notificationText = sb.toString().trim();
-                Log.d(TAG, "🔔 [通知事件] 内容捕捉: " + notificationText);
-                return notificationText;
-            }
-        } else {
-            // 处理窗口内容变化
-            AccessibilityNodeInfo root = event.getSource();
-            if (root == null) return null;
-            
-            StringBuilder sb = new StringBuilder();
-            extractTextFromNode(root, sb, new HashSet<>()); // 传入 Set 进行局部去重
-            return sb.toString().trim();
+        if (event.getEventType() != AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) {
+            return null;
         }
-        return null;
-    }
-
-    private void extractTextFromNode(AccessibilityNodeInfo node, StringBuilder sb, Set<String> localSet) {
-        if (node == null) return;
-        if (node.getText() != null) {
-            String text = node.getText().toString().trim();
-            // 核心优化：如果同一屏内已经处理过相同文本，则跳过，防止 [摘要, 详情] 重复拼接
-            if (!text.isEmpty() && !localSet.contains(text)) {
-                sb.append(text).append(" ");
-                localSet.add(text);
-            }
+        if (event.getText() == null || event.getText().isEmpty()) {
+            return null;
         }
-        for (int i = 0; i < node.getChildCount(); i++) {
-            extractTextFromNode(node.getChild(i), sb, localSet);
+        StringBuilder sb = new StringBuilder();
+        for (CharSequence charSequence : event.getText()) {
+            sb.append(charSequence).append(" ");
         }
+        return sb.toString().trim();
     }
 
     private void checkFraudWithBackend(Context context, String content) {

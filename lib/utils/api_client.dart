@@ -16,7 +16,7 @@ class ApiClient {
 
   ApiClient._internal() {
     BaseOptions options = BaseOptions(
-      baseUrl: "http://10.0.2.2:9000", // 模拟测试(模拟机)/
+      // baseUrl: "http://10.0.2.2:9000", // 模拟测试(模拟机)/
       // baseUrl: "http://127.0.0.1:9000",   // 无线测试(真机)
       // baseUrl: "http://10.96.97.231:9000",
       // baseUrl: "http://172.20.10.6:9000",
@@ -67,6 +67,8 @@ class ApiClient {
           await prefs.remove('token');
           await prefs.remove('userId');
           await prefs.remove('userPhone');
+          await prefs.remove('elder_remind_count');
+          await prefs.remove('alerted_med_keys');
 
           // 强制清空路由栈并跳转到登录页
           if (navigatorKey.currentState != null) {

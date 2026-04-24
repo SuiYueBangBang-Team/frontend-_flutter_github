@@ -3,7 +3,12 @@ package com.example.phone_java;
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
 
+import android.content.Context;
+import android.content.Intent;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 import android.util.Log;
+import android.view.KeyEvent;
 import android.view.accessibility.AccessibilityEvent;
 
 /**
@@ -13,6 +18,12 @@ public class UnifiedAccessibilityService extends AccessibilityService {
 
     private static final String TAG = "UnifiedAuto";
     private static UnifiedAccessibilityService instance;
+
+    // SOS 相关变量
+    private int volumePressCount = 0;
+    private long lastPressTime = 0;
+    private static final long DOUBLE_PRESS_TIMEOUT = 1000;  // 连续按键时间窗口
+    private static final int TRIGGER_COUNT = 3;            // 需要连续按3次
 
     public static UnifiedAccessibilityService getInstance() {
         return instance;
@@ -42,7 +53,8 @@ public class UnifiedAccessibilityService extends AccessibilityService {
         info.packageNames = null; 
         
         info.flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS 
-                   | AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
+                   | AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+                   | AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS;
         
         setServiceInfo(info);
         Log.d(TAG, "UnifiedAccessibilityService 已连接，反诈卫士已就绪。");
@@ -85,5 +97,50 @@ public class UnifiedAccessibilityService extends AccessibilityService {
     @Override
     public void onInterrupt() {
         Log.w(TAG, "UnifiedAccessibilityService 被中断");
+    }
+
+    @Override
+    protected boolean onKeyEvent(KeyEvent event) {
+        if (event.getAction() == KeyEvent.ACTION_DOWN) {
+            int keyCode = event.getKeyCode();
+            if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+                long currentTime = System.currentTimeMillis();
+
+                if (currentTime - lastPressTime > DOUBLE_PRESS_TIMEOUT) {
+                    volumePressCount = 1;
+                } else {
+                    volumePressCount++;
+                }
+                lastPressTime = currentTime;
+
+                Log.d(TAG, "音量键按下，当前计数: " + volumePressCount);
+
+                if (volumePressCount >= TRIGGER_COUNT) {
+                    volumePressCount = 0;
+                    triggerEmergencySOS();
+                    return true;  // 消费事件
+                }
+            }
+        }
+        return super.onKeyEvent(event);
+    }
+
+    private void triggerEmergencySOS() {
+        Log.i(TAG, "触发紧急救助功能 (SOS)!");
+
+        // 1. 震动反馈
+        Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+        if (v != null) {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                v.vibrate(VibrationEffect.createWaveform(new long[]{0, 200, 100, 200}, -1));
+            } else {
+                v.vibrate(new long[]{0, 200, 100, 200}, -1);
+            }
+        }
+
+        // 2. 发送广播给 MainActivity 转发给 Flutter
+        Intent intent = new Intent("com.example.phone_java.SOS_TRIGGER");
+        intent.setPackage(getPackageName());
+        sendBroadcast(intent);
     }
 }

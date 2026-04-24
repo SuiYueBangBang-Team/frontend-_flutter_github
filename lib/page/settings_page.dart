@@ -27,6 +27,8 @@ class _SettingsPageState extends State<SettingsPage> {
     await prefs.remove('token');
     await prefs.remove('userId');
     await prefs.remove('userPhone');
+    await prefs.remove('elder_remind_count');
+    await prefs.remove('alerted_med_keys');
 
     ApiClient.globalToken = null;
 

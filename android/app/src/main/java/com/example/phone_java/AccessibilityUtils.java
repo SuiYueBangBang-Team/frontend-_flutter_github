@@ -120,6 +120,22 @@ public class AccessibilityUtils {
         }
         return null;
     }
+    // 在你的 AccessibilityUtils 或者 Service 中添加这个辅助方法
+    public static boolean clickNodeOrParent(AccessibilityNodeInfo node) {
+        if (node == null) return false;
+        if (node.isClickable()) {
+            return node.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+        } else {
+            // 如果当前节点不可点，尝试点它的父节点
+            AccessibilityNodeInfo parent = node.getParent();
+            if (parent != null) {
+                boolean res = clickNodeOrParent(parent);
+                parent.recycle(); // 记得回收
+                return res;
+            }
+        }
+        return false;
+    }
 
     public static boolean inputText(AccessibilityNodeInfo node, String text) {
         if (node == null || text == null) return false;

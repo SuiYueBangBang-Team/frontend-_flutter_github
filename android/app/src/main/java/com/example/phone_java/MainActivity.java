@@ -40,6 +40,7 @@ public class MainActivity extends FlutterActivity {
     private static final String CHANNEL = "voice_intent";
     private static final String ACCESSIBILITY_CHANNEL = "com.yourcompany.phone_java/accessibility";
     private static final String FLOAT_CHANNEL = "com.yourcompany.phone_java/float_window";
+    private static final String EMERGENCY_CHANNEL = "com.yourcompany.phone_java/emergency";
 
     private static final String TAG = "MainActivity";
     private static final String WECHAT_PACKAGE = "com.tencent.mm";
@@ -281,6 +282,28 @@ public class MainActivity extends FlutterActivity {
                 });
 
         // 监听悬浮窗的语音事件，透传到 Flutter（暂时禁用）
+        
+        // SOS 广播监听
+        android.content.IntentFilter filter = new android.content.IntentFilter("com.example.phone_java.SOS_TRIGGER");
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(new android.content.BroadcastReceiver() {
+                @Override
+                public void onReceive(Context context, Intent intent) {
+                    android.util.Log.i(TAG, "收到 SOS 广播，通知 Flutter");
+                    new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), EMERGENCY_CHANNEL)
+                            .invokeMethod("onEmergencySOS", null);
+                }
+            }, filter, Context.RECEIVER_EXPORTED);
+        } else {
+            registerReceiver(new android.content.BroadcastReceiver() {
+                @Override
+                public void onReceive(Context context, Intent intent) {
+                    android.util.Log.i(TAG, "收到 SOS 广播，通知 Flutter");
+                    new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), EMERGENCY_CHANNEL)
+                            .invokeMethod("onEmergencySOS", null);
+                }
+            }, filter);
+        }
     }
 
     @Override

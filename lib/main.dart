@@ -21,6 +21,8 @@ import 'package:phone_java/page/child/child_index_page.dart';
 
 import 'package:phone_java/page/child/child_comm_post_create.dart';
 import 'package:phone_java/page/child/child_comm_post_myself.dart';
+import 'package:phone_java/page/emergency_page.dart';
+import 'package:flutter/services.dart';
 
 //  1. 全局 NavigatorKey
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -67,8 +69,31 @@ Future<void> main() async {
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  static const emergencyChannel = MethodChannel('com.yourcompany.phone_java/emergency');
+
+  @override
+  void initState() {
+    super.initState();
+    _setupEmergencyListener();
+  }
+
+  void _setupEmergencyListener() {
+    emergencyChannel.setMethodCallHandler((call) async {
+      if (call.method == 'onEmergencySOS') {
+        debugPrint('收到 SOS 触发信号，准备跳转');
+        // 使用全局 navigatorKey 进行跳转
+        navigatorKey.currentState?.pushNamed('/emergency_sos');
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -115,6 +140,9 @@ class MyApp extends StatelessWidget {
             //  新增：社区相关路由
             '/createPostPage': (context) => const CreatePostPage(),
             '/myPostPage': (context) => const MyPostPage(),
+
+            // 新增：紧急救助路由
+            '/emergency_sos': (context) => const EmergencyPage(),
           },
         );
       },

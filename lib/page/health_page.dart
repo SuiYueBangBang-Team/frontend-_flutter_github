@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'dart:async'; //  引入定时器库
+import 'dart:async';
 import '../app_fonts.dart';
 import '../utils/api_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:vibration/vibration.dart';
 
 class HealthPage extends StatefulWidget {
   const HealthPage({super.key});
@@ -16,19 +17,33 @@ class _HealthPageState extends State<HealthPage> {
   List<Map<String, dynamic>> reminders = [];
   bool isLoading = true;
 
-  //  轮询提醒核心变量
   Timer? _pollingTimer;
-  int _lastRemindCount = -1; // -1 表示尚未初始化
+  int _lastRemindCount = -1;
+  final Set<String> _alertedMedKeys = {};
 
   @override
   void initState() {
     super.initState();
-    _fetchHealthData();
-
-    //  开启定时器，每 5 秒去后端查一次是否有新提醒
-    _pollingTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
-      _checkReminders();
+    _loadAlertedKeys().then((_) {
+      _fetchHealthData();
+      _pollingTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+        _checkReminders();
+        _checkTimeBasedReminders();
+      });
     });
+  }
+
+  Future<void> _loadAlertedKeys() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList('alerted_med_keys') ?? [];
+    final todayKey = DateTime.now().toIso8601String().substring(0, 10);
+    // 只保留今天的 key，自动清理过期数据
+    _alertedMedKeys.addAll(saved.where((k) => k.contains(todayKey)));
+  }
+
+  Future<void> _saveAlertedKeys() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('alerted_med_keys', _alertedMedKeys.toList());
   }
 
   @override
@@ -85,8 +100,128 @@ class _HealthPageState extends State<HealthPage> {
     }
   }
 
+  void _checkTimeBasedReminders() {
+    final now = TimeOfDay.now();
+    final todayKey = DateTime.now().toIso8601String().substring(0, 10);
+    debugPrint('【提醒检查】当前时间: ${now.hour}:${now.minute}, 用药数: ${todayMeds.length}, 提醒数: ${reminders.length}, 已弹keys: $_alertedMedKeys');
+
+    // 检查用药提醒
+    for (final med in todayMeds) {
+      if (med['isTaken'] ?? false) continue;
+      final String? timeStr = med['timeStr'];
+      if (timeStr == null || !timeStr.contains(':')) continue;
+      final parts = timeStr.split(':');
+      final int h = int.tryParse(parts[0]) ?? -1;
+      final int m = int.tryParse(parts[1]) ?? -1;
+      if (h < 0) continue;
+      final bool reached = now.hour == h && now.minute == m;
+      final String key = "med_${med['id']}_${todayKey}_$timeStr";
+      debugPrint('【用药】${med['name']} timeStr=$timeStr reached=$reached alerted=${_alertedMedKeys.contains(key)}');
+      if (!reached) continue;
+      if (_alertedMedKeys.contains(key)) continue;
+      _alertedMedKeys.add(key);
+      _saveAlertedKeys();
+      _showTimeBasedMedDialog(med['name'] ?? '药物', timeStr);
+      return;
+    }
+
+    // 检查提醒事项
+    for (final rem in reminders) {
+      final String? timeStr = rem['timeStr'] ?? rem['time'];
+      if (timeStr == null || !timeStr.contains(':')) continue;
+      final parts = timeStr.split(':');
+      final int h = int.tryParse(parts[0]) ?? -1;
+      final int m = int.tryParse(parts[1]) ?? -1;
+      if (h < 0) continue;
+      final bool reached = now.hour == h && now.minute == m;
+      final String key = "rem_${rem['id']}_${todayKey}_$timeStr";
+      debugPrint('【提醒事项】${rem['content']} timeStr=$timeStr reached=$reached alerted=${_alertedMedKeys.contains(key)}');
+      if (!reached) continue;
+      if (_alertedMedKeys.contains(key)) continue;
+      _alertedMedKeys.add(key);
+      _saveAlertedKeys();
+      _showReminderDialog(rem['content'] ?? '提醒事项', timeStr);
+      return;
+    }
+  }
+
+  void _showReminderDialog(String content, String timeStr) {
+    if (!mounted) return;
+    Vibration.vibrate(pattern: [0, 500, 200, 500, 200, 500]);
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.orange,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.notifications_active_rounded, color: Colors.white, size: 36),
+            SizedBox(width: 10),
+            Text("提醒事项", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Text(
+          "现在是 $timeStr，提醒您：$content",
+          style: const TextStyle(color: Colors.white, fontSize: 18, height: 1.5),
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.orange,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            ),
+            onPressed: () => Navigator.pop(context),
+            child: const Text("我知道了", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showTimeBasedMedDialog(String medName, String timeStr) {
+    if (!mounted) return;
+    Vibration.vibrate(pattern: [0, 500, 200, 500, 200, 500]);
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.orange,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.alarm_rounded, color: Colors.white, size: 36),
+            SizedBox(width: 10),
+            Text("吃药时间到！", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Text(
+          "现在是 $timeStr，记得服用【$medName】哦～",
+          style: const TextStyle(color: Colors.white, fontSize: 18, height: 1.5),
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.orange,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            ),
+            onPressed: () {
+              Navigator.pop(context);
+              _fetchHealthData();
+            },
+            child: const Text("我知道了，马上吃", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
   //  专属长辈的强提醒弹窗
   void _showElderWarningDialog() {
+    if (!mounted) return;
+    Vibration.vibrate(pattern: [0, 500, 200, 500, 200, 500]);
     showDialog(
       context: context,
       barrierDismissible: false, // 强制用户必须点击按钮才能关掉弹窗

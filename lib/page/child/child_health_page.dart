@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:phone_java/app_fonts.dart';       // 确保相对路径正确
-import 'package:phone_java/utils/api_client.dart'; // 引入请求客户端
+import 'dart:async';
+import 'package:phone_java/app_fonts.dart';
+import 'package:phone_java/utils/api_client.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:vibration/vibration.dart';
 
 class ChildHealthPage extends StatefulWidget {
   const ChildHealthPage({super.key});
@@ -12,16 +15,94 @@ class ChildHealthPage extends StatefulWidget {
 class _ChildHealthPageState extends State<ChildHealthPage> {
   //  已彻底移除 _isDebugMode 假数据拦截，强制走真实后端
 
-  List<Map<String, dynamic>> parentMeds = []; // 长辈的用药数据
-  List<Map<String, dynamic>> myReminders = []; // 子女自己的提醒数据
-  List<Map<String, dynamic>> familyMembers = []; // 子女绑定的老人列表
+  List<Map<String, dynamic>> parentMeds = [];
+  List<Map<String, dynamic>> myReminders = [];
+  List<Map<String, dynamic>> familyMembers = [];
   bool isLoading = true;
-  int remindCount = 0; // 今日已提醒次数
+  int remindCount = 0;
+
+  Timer? _reminderTimer;
+  final Set<String> _alertedKeys = {};
 
   @override
   void initState() {
     super.initState();
-    _fetchHealthData();
+    _loadAlertedKeys().then((_) {
+      _fetchHealthData();
+      _reminderTimer = Timer.periodic(const Duration(seconds: 30), (_) => _checkTimeBasedReminders());
+    });
+  }
+
+  Future<void> _loadAlertedKeys() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList('child_alerted_keys') ?? [];
+    final todayKey = DateTime.now().toIso8601String().substring(0, 10);
+    _alertedKeys.addAll(saved.where((k) => k.contains(todayKey)));
+  }
+
+  Future<void> _saveAlertedKeys() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('child_alerted_keys', _alertedKeys.toList());
+  }
+
+  @override
+  void dispose() {
+    _reminderTimer?.cancel();
+    super.dispose();
+  }
+
+  void _checkTimeBasedReminders() {
+    final now = TimeOfDay.now();
+    final todayKey = DateTime.now().toIso8601String().substring(0, 10);
+    for (final rem in myReminders) {
+      final String? timeStr = rem['timeStr'] ?? rem['time'];
+      if (timeStr == null || !timeStr.contains(':')) continue;
+      final parts = timeStr.split(':');
+      final int h = int.tryParse(parts[0]) ?? -1;
+      final int m = int.tryParse(parts[1]) ?? -1;
+      if (h < 0) continue;
+      final bool reached = now.hour == h && now.minute == m;
+      if (!reached) continue;
+      final String key = "${rem['id']}_${todayKey}_$timeStr";
+      if (_alertedKeys.contains(key)) continue;
+      _alertedKeys.add(key);
+      _saveAlertedKeys();
+      _showReminderDialog(rem['content'] ?? '提醒事项', timeStr);
+      break;
+    }
+  }
+
+  void _showReminderDialog(String content, String timeStr) {
+    if (!mounted) return;
+    Vibration.vibrate(pattern: [0, 500, 200, 500, 200, 500]);
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.blueAccent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(children: [
+          Icon(Icons.alarm_rounded, color: Colors.white, size: 36),
+          SizedBox(width: 10),
+          Text("提醒事项", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        ]),
+        content: Text(
+          "现在是 $timeStr，提醒您：$content",
+          style: const TextStyle(color: Colors.white, fontSize: 18, height: 1.5),
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.blueAccent,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            ),
+            onPressed: () => Navigator.pop(context),
+            child: const Text("我知道了", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
   //  获取真实后端数据

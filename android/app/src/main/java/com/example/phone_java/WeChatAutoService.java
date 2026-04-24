@@ -154,6 +154,9 @@ public class WeChatAutoService {
                     if (AccessibilityUtils.clickByViewId(root, ID_MORE_FUNCTION) || AccessibilityUtils.clickByAnyDesc(root, "更多功能")) {
                         step = targetMessage.isEmpty() ? STEP_CLICK_PANEL_VIDEO : STEP_INPUT_MESSAGE;
                         success = true;
+                        // 关键：这里至少要延迟 800ms - 1000ms，等待面板完全弹出来
+                        handler.postDelayed(stateMachineRunnable, 1000);
+                        return;
                     }
                     break;
                 case STEP_INPUT_MESSAGE:
@@ -246,14 +249,77 @@ public class WeChatAutoService {
         return false;
     }
 
+    /**
+     * 核心改进：全窗口扫描 + 坐标模拟点击
+     * 解决微信面板节点不可点击及 ID 混淆问题
+     */
     private boolean forceClickPanelVideo() {
         if (serviceInstance == null) return false;
+
+        // 1. 获取所有交互窗口（解决权限或弹窗导致的根节点偏移）
         List<AccessibilityWindowInfo> windows = serviceInstance.getWindows();
         if (windows == null) return false;
+
         for (AccessibilityWindowInfo window : windows) {
             AccessibilityNodeInfo root = window.getRoot();
             if (root == null) continue;
-            if (AccessibilityUtils.clickByAnyText(root, "视频通话") || AccessibilityUtils.clickByViewId(root, "com.tencent.mm:id/a12")) return true;
+
+            // 2. 优先通过文字检索 "视频通话"
+            List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByText("视频通话");
+            if (nodes != null && !nodes.isEmpty()) {
+                for (AccessibilityNodeInfo node : nodes) {
+                    // 获取节点在屏幕上的绝对坐标系 Rect
+                    android.graphics.Rect rect = new android.graphics.Rect();
+                    node.getBoundsInScreen(rect);
+
+                    // 3. 执行物理层模拟点击，绕过所有 View 层的点击拦截
+                    clickAt(rect.centerX(), rect.centerY());
+                    Log.d(TAG, "已执行物理点击: " + rect.centerX() + "," + rect.centerY());
+                    return true;
+                }
+            }
+
+            // 4. 冗余方案：修正 ID 为 al2 (字母 L)
+            List<AccessibilityNodeInfo> idNodes = root.findAccessibilityNodeInfosByViewId("com.tencent.mm:id/a12");
+            if (idNodes != null && !idNodes.isEmpty()) {
+                android.graphics.Rect rect = new android.graphics.Rect();
+                idNodes.get(0).getBoundsInScreen(rect);
+                clickAt(rect.centerX(), rect.centerY());
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 模拟物理点击的方法
+     */
+    private void clickAt(int x, int y) {
+        if (serviceInstance == null) return;
+        android.accessibilityservice.GestureDescription.Builder builder = new android.accessibilityservice.GestureDescription.Builder();
+        android.graphics.Path path = new android.graphics.Path();
+        path.moveTo(x, y);
+        // 模拟手指点下去停留100毫秒再抬起
+        builder.addStroke(new android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 100));
+        serviceInstance.dispatchGesture(builder.build(), null, null);
+    }
+
+    /**
+     * 这是一个核心工具方法，建议放在 AccessibilityUtils 里或者本类中
+     * 它的作用就是实现 XPath 中 /ancestor::... 的逻辑，直到找到能点的地方
+     */
+    public static boolean clickNodeOrParent(AccessibilityNodeInfo node) {
+        if (node == null) return false;
+        if (node.isClickable()) {
+            return node.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+        } else {
+            AccessibilityNodeInfo parent = node.getParent();
+            if (parent != null) {
+                boolean result = clickNodeOrParent(parent);
+                // 必须要 recycle 掉 parent，否则会内存泄漏导致脚本变慢
+                parent.recycle();
+                return result;
+            }
         }
         return false;
     }
